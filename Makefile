@@ -25,7 +25,6 @@ test: localstack-init run-tests localstack-stop badge ## Run testing and coverag
 .PHONY: test-ci
 test: localstack-init run-tests localstack-stop ## Run testing and coverage.
 
-
 .PHONY: localstack-init
 localstack-init: ## Starts localstack with init script
 	SQS_ENABLE_MESSAGE_RETENTION_PERIOD=1 localstack start -d --no-banner; localstack wait -t 45

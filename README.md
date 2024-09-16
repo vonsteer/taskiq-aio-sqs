@@ -1,10 +1,10 @@
 # TaskIQ SQS/S3 aiobotocore
 
-[![PyPI](https://img.shields.io/pypi/v/taskiq-aio-sqs?style=for-the-badge)](https://pypi.org/project/taskiq-aio-sqs/)
-[![Python Versions](https://img.shields.io/pypi/pyversions/taskiq-aio-sqs?style=for-the-badge)](https://pypi.org/project/taskiq-aio-sqs/)
-[![Ruff](https://img.shields.io/endpoint?style=for-the-badge&url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white&style=for-the-badge)](https://github.com/pre-commit/pre-commit)
-[![Coverage Status](./coverage-badge.svg?dummy=8484744&style=for-the-badge)](./coverage.xml)
+[![PyPI](https://img.shields.io/pypi/v/taskiq-aio-sqs)](https://pypi.org/project/taskiq-aio-sqs/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/taskiq-aio-sqs)](https://pypi.org/project/taskiq-aio-sqs/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+[![Coverage Status](./coverage-badge.svg?dummy=8484744)](./coverage.xml)
 
 This lirary provides you with a fully asynchronous SQS broker and S3 backend for TaskIQ using aiobotocore.
 Inspired by the [taskiq-sqs](https://github.com/ApeWorX/taskiq-sqs) broker.
