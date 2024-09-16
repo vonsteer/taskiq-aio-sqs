@@ -31,6 +31,10 @@ jobs:
       matrix:
         py_version: ["3.10", "3.11", "3.12"]
     runs-on: "ubuntu-latest"
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - name: "Set up Python"
@@ -44,7 +48,7 @@ jobs:
       - name: Run pytest check for Python ${{ matrix.py_version }}
         run: make test py_version=${{ matrix.py_version }}
       - name: Show Coverage
-        if: ${{ (github.event_name == 'pull_request') && (matrix.py_version == '3.10') }}
+        if: github.event_name == 'pull_request' && matrix.py_version == '3.10'
         uses: orgoro/coverage@v3.2
         with:
             coverageFile: coverage.xml
