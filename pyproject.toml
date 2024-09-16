@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "taskiq-aio-sqs"
-description = "SQS Broker for TaskIQ using Aiobotocore"
+description = "SQS/S3 Broker for TaskIQ using Aiobotocore"
 urls = {source = "https://github.com/vonsteer/taskiq-aio-sqs"}
 readme = "README.md"
 requires-python = ">=3.10"
-keywords = ["taskiq", "broker", "aws", "sqs", "s3", "aiobotocore"]
+keywords = ["taskiq", "broker", "aws", "sqs", "s3", "aiobotocore", "taskiq-broker", "queue"]
 license = {file = "LICENSE"}
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -19,12 +19,15 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 dependencies = ["botocore~=1.35.16", "aiobotocore~=2.15.0","taskiq[orjson]>=0.11.7,<1"]
 dynamic = ["version"]
+
+[tool.setuptools-git-versioning]
+enabled = true
 
 [project.optional-dependencies]
 dev = [

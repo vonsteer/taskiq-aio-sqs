@@ -44,19 +44,18 @@ class SQSBroker(AsyncBroker):
         region_name: str = DEFAULT_REGION,
         aws_access_key_id: str | None = None,
         aws_secret_access_key: str | None = None,
-        use_deduplication_id: bool = False,
+        use_task_id_for_deduplication: bool = False,
         wait_time_seconds: int = 0,
         max_number_of_messages: int = 1,
         result_backend: Optional[AsyncResultBackend] = None,
         task_id_generator: Optional[Callable[[], str]] = None,
-        sqs_region_override: str | None = None,
     ) -> None:
         super().__init__(result_backend, task_id_generator)
 
         self._aws_region = region_name
         self._aws_access_key_id = aws_access_key_id
         self._aws_secret_access_key = aws_secret_access_key
-        self._use_deduplication_id = use_deduplication_id
+        self._use_task_id_for_deduplication = use_task_id_for_deduplication
         self._aws_endpoint_url = endpoint_url
         self._sqs_queue_name = sqs_queue_name
         self._sqs_queue_url: Optional[str] = None
@@ -147,7 +146,7 @@ class SQSBroker(AsyncBroker):
         }
         if ".fifo" in self._sqs_queue_name:
             kwargs["MessageGroupId"] = message.task_name
-            if self._use_deduplication_id:
+            if self._use_task_id_for_deduplication:
                 kwargs["MessageDeduplicationId"] = message.task_id
         return kwargs
 

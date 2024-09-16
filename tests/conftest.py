@@ -108,7 +108,7 @@ async def sqs_broker_fifo(
 ) -> AsyncGenerator[SQSBroker, Any]:
     broker = SQSBroker(
         sqs_queue_name=FIFO_QUEUE_NAME,
-        use_deduplication_id=True,
+        use_task_id_for_deduplication=True,
         **aws_credentials,
     )
     await broker.startup()
@@ -124,7 +124,7 @@ async def sqs_broker_fifo_no_dedup(
 ) -> AsyncGenerator[SQSBroker, Any]:
     broker = SQSBroker(
         sqs_queue_name=FIFO_QUEUE_NAME,
-        use_deduplication_id=False,
+        use_task_id_for_deduplication=False,
         **aws_credentials,
     )
     await broker.startup()
