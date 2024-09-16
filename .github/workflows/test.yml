@@ -1,6 +1,10 @@
 name: Testing taskiq-aio-sqs
 
-on: [push, pull_request]
+on:
+  pull_request:
+      branches:
+          - main
+          - develop
 
 jobs:
   lint:
@@ -40,7 +44,7 @@ jobs:
       - name: Run pytest check
         run: make test py_version=${{ matrix.py_version }}
       - name: Show Coverage
-        if: ${{ github.event_name == 'pull_request' and ${{ matrix.py_version }} == '3.10'}}
+        if: ${{ github.event_name == 'pull_request' && matrix.py_version == '3.10'}}
         uses: orgoro/coverage@v3.2
         with:
             coverageFile: coverage.xml
