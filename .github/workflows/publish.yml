@@ -1,0 +1,26 @@
+name: Release taskiq-aio-sqs package
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/taskiq-aio-sqs
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: make install
+      - name: Build dist
+        run: python -m build
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
