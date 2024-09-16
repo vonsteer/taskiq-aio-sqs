@@ -45,7 +45,7 @@ ruff-format: ## Runs style checkers fixing issues
 
 .PHONY: typing
 typing: ## Runs pyright static type checking
-	$(PYTHON) -m pyright $(LIBRARY)/
+	$(PYTHON) -m pyright taskiq_aio_sqs/
 
 .PHONY: check
 check: ruff-check typing ## Runs all quality checks without fixing issues
