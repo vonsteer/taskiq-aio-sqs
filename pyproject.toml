@@ -23,7 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
 ]
-dependencies = ["botocore~=1.35.16", "aiobotocore~=2.15.0","taskiq>=0.11.7,<1"]
+dependencies = ["botocore~=1.35.16", "aiobotocore~=2.15.0","taskiq[orjson]>=0.11.7,<1"]
 dynamic = ["version"]
 
 [project.optional-dependencies]

@@ -4,11 +4,6 @@ on: [push, pull_request]
 
 jobs:
   lint:
-    strategy:
-      matrix:
-        cmd:
-          - ruff
-          - pyright
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -21,7 +16,7 @@ jobs:
           pip install --upgrade pip
           make install
       - name: Run lint check
-        run: python3 -m pre_commit run -a ${{ matrix.cmd }}
+        run: make check
   pytest:
     strategy:
       matrix:
