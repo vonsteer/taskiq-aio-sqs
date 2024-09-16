@@ -10,6 +10,8 @@ from taskiq_aio_sqs import S3Backend, SQSBroker
 
 ENDPOINT_URL = "http://localhost:4566"
 TEST_BUCKET = "test-bucket"
+EXTENDED_BUCKET = "extendeded-bucket"
+
 FIFO_QUEUE_NAME = "test-request.fifo"
 QUEUE_NAME = "test-request-2"
 
@@ -92,12 +94,38 @@ async def s3_bucket(s3_client: S3Client) -> AsyncGenerator[str, Any]:
     await s3_client.delete_bucket(Bucket=TEST_BUCKET)
 
 
+@pytest.fixture(scope="session")
+async def extended_s3_bucket(s3_client: S3Client) -> AsyncGenerator[str, Any]:
+    response = await s3_client.create_bucket(Bucket=EXTENDED_BUCKET)
+    yield EXTENDED_BUCKET
+    # Delete all objects in the bucket
+    response = await s3_client.list_objects_v2(Bucket=EXTENDED_BUCKET)
+    if "Contents" in response:
+        objects_to_delete = [
+            {"Key": obj["Key"]}  # type: ignore
+            for obj in response.get("Contents", [])  # type: ignore
+        ]
+        if objects_to_delete:
+            await s3_client.delete_objects(
+                Bucket=EXTENDED_BUCKET,
+                Delete={"Objects": objects_to_delete},  # type: ignore
+            )
+
+    # Delete the bucket itself
+    await s3_client.delete_bucket(Bucket=EXTENDED_BUCKET)
+
+
 @pytest.fixture()
 async def sqs_broker(aws_credentials: dict[str, Any]) -> AsyncGenerator[SQSBroker, Any]:
-    broker = SQSBroker(sqs_queue_name=QUEUE_NAME, **aws_credentials)
+    broker = SQSBroker(
+        sqs_queue_name=QUEUE_NAME,
+        s3_extended_bucket_name=EXTENDED_BUCKET,
+        **aws_credentials,
+    )
     await broker.startup()
     assert broker._sqs_client
     assert broker._sqs_queue_url
+    assert broker._s3_client
     yield broker
     await broker.shutdown()
 

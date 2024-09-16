@@ -28,7 +28,7 @@ test: localstack-init run-tests localstack-stop ## Run testing and coverage.
 
 .PHONY: localstack-init
 localstack-init: ## Starts localstack with init script
-	SQS_ENABLE_MESSAGE_RETENTION_PERIOD=1 localstack start -d --no-banner -v ./tests/localstack:/etc/localstack/init/ready.d; localstack wait -t 45
+	SQS_ENABLE_MESSAGE_RETENTION_PERIOD=1 localstack start -d --no-banner; localstack wait -t 45
 
 .PHONY: localstack-stop
 localstack-stop: ## Starts localstack with init script

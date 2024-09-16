@@ -1,13 +1,17 @@
 # TaskIQ SQS/S3 aiobotocore
 
-[![PyPI](https://img.shields.io/pypi/v/taskiq-aio-sqs)](https://pypi.org/project/taskiq-aio-sqs/)
-[![Python Versions](https://img.shields.io/pypi/pyversions/taskiq-aio-sqs)](https://pypi.org/project/taskiq-aio-sqs/)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
-[![Coverage Status](./coverage-badge.svg?dummy=8484744)](./coverage.xml)
+[![PyPI](https://img.shields.io/pypi/v/taskiq-aio-sqs?style=for-the-badge)](https://pypi.org/project/taskiq-aio-sqs/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/taskiq-aio-sqs?style=for-the-badge)](https://pypi.org/project/taskiq-aio-sqs/)
+[![Ruff](https://img.shields.io/endpoint?style=for-the-badge&url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white&style=for-the-badge)](https://github.com/pre-commit/pre-commit)
+[![Coverage Status](./coverage-badge.svg?dummy=8484744&style=for-the-badge)](./coverage.xml)
 
 This lirary provides you with a fully asynchronous SQS broker and S3 backend for TaskIQ using aiobotocore.
 Inspired by the [taskiq-sqs](https://github.com/ApeWorX/taskiq-sqs) broker.
+
+Besides the SQS broker, this library also provides an S3 backend for the results, this is useful when the results are too large for SQS.
+Addidionally, the broker itself can be configured to use S3 + SQS for messages that are too large for SQS,
+we do this by replicating the behaviour of the [Amazon Extended Client Library](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-managing-large-messages.html).
 
 ## Installation
 
@@ -60,6 +64,9 @@ SQS Broker parameters:
 * `use_task_id_for_deduplication` - use task_id for deduplication, this is useful when using a Fifo queue without content based deduplication, defaults to False.
 * `wait_time_seconds` - wait time in seconds for long polling, defaults to 0.
 * `max_number_of_messages` - maximum number of messages to receive, defaults to 1 (max 10).
+* `s3_extended_bucket_name` - extended bucket name for the s3 objects,
+  adding this will allow the broker to kick messages that are too large for SQS by using S3 as well,
+  by default the listen function handles this behaviour, defaults to None.
 * `task_id_generator` - custom task_id generator (Optional).
 * `result_backend` - custom result backend (Optional).
 
