@@ -108,7 +108,7 @@ pub_broker = SQSBroker(
 
 sub_broker = SQSBroker(
     endpoint_url="http://localhost:4566",
-    s3_extended_bucket_name="response-bucket",
+    sqs_queue_name="my-queue",
 )
 
 LARGE_MESSAGE = b"x" * (256 * 1024 + 1)  # 256 KB is the limit for SQS
