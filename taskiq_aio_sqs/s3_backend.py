@@ -13,14 +13,12 @@ from taskiq.compat import model_dump, model_validate
 from taskiq.result import TaskiqResult
 from taskiq.serializers import ORJSONSerializer
 
-from taskiq_aio_sqs import exceptions
+from taskiq_aio_sqs import constants, exceptions
 
 if TYPE_CHECKING:
     from types_aiobotocore_s3.client import S3Client
 
 _ReturnType = TypeVar("_ReturnType")
-
-DEFAULT_REGION = "us-east-1"
 
 
 class S3Backend(AsyncResultBackend[_ReturnType]):
@@ -31,7 +29,7 @@ class S3Backend(AsyncResultBackend[_ReturnType]):
         bucket_name: str,
         base_path: str = "",
         endpoint_url: str | None = None,
-        region_name: str = DEFAULT_REGION,
+        region_name: str = constants.DEFAULT_REGION,
         aws_access_key_id: str | None = None,
         aws_secret_access_key: str | None = None,
         serializer: Optional[TaskiqSerializer] = None,
