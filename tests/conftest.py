@@ -3,10 +3,12 @@ from typing import Any, AsyncGenerator, Generator
 
 import pytest
 from aiobotocore.session import get_session
+from taskiq import BrokerMessage
 from types_aiobotocore_s3.client import S3Client
 from types_aiobotocore_sqs.client import SQSClient
 
 from taskiq_aio_sqs import S3Backend, SQSBroker
+from taskiq_aio_sqs.constants import MAX_SQS_MESSAGE_SIZE
 
 ENDPOINT_URL = "http://localhost:4566"
 TEST_BUCKET = "test-bucket"
@@ -163,9 +165,56 @@ async def sqs_broker_fifo_no_dedup(
 
 
 @pytest.fixture()
+async def sqs_broker_with_delay_seconds(
+    aws_credentials: dict[str, Any],
+) -> AsyncGenerator[SQSBroker, Any]:
+    broker = SQSBroker(
+        sqs_queue_name=QUEUE_NAME,
+        use_task_id_for_deduplication=False,
+        delay_seconds=2,
+        **aws_credentials,
+    )
+    await broker.startup()
+    assert broker._sqs_client
+    assert broker._sqs_queue_url
+    yield broker
+    await broker.shutdown()
+
+
+@pytest.fixture()
 async def s3_backend(aws_credentials: dict[str, Any]) -> AsyncGenerator[S3Backend, Any]:
     backend = S3Backend(bucket_name=TEST_BUCKET, **aws_credentials)
     await backend.startup()
     assert backend._s3_client
     yield backend
     await backend.shutdown()
+
+
+@pytest.fixture
+def broker_message() -> BrokerMessage:
+    return BrokerMessage(
+        task_id="test_task",
+        task_name="test_task",
+        message=b"test_message",
+        labels={},
+    )
+
+
+@pytest.fixture
+def huge_broker_message() -> BrokerMessage:
+    return BrokerMessage(
+        task_id="large_task",
+        task_name="test_task",
+        message=b"x" * (MAX_SQS_MESSAGE_SIZE + 1),
+        labels={},
+    )
+
+
+@pytest.fixture
+def delayed_broker_message() -> BrokerMessage:
+    return BrokerMessage(
+        task_id="large_task",
+        task_name="test_task",
+        message=b"test_message",
+        labels={"delay": 1},
+    )

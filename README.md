@@ -6,12 +6,12 @@
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
 [![Coverage Status](./coverage-badge.svg?dummy=8484744)](./coverage.xml)
 
-This lirary provides you with a fully asynchronous SQS broker and S3 backend for TaskIQ using aiobotocore.
+This library provides you with a fully asynchronous SQS broker and S3 backend for TaskIQ using aiobotocore.
 Inspired by the [taskiq-sqs](https://github.com/ApeWorX/taskiq-sqs) broker.
 
 Besides the SQS broker, this library also provides an S3 backend for the results, this is useful when the results are too large for SQS.
 Addidionally, the broker itself can be configured to use S3 + SQS for messages that are too large for SQS,
-we do this by replicating the behaviour of the [Amazon Extended Client Library](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-managing-large-messages.html).
+replicating the behaviour of the [Amazon Extended Client Library](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-managing-large-messages.html).
 
 ## Installation
 
@@ -19,7 +19,7 @@ we do this by replicating the behaviour of the [Amazon Extended Client Library](
 pip install taskiq-aio-sqs
 ```
 
-## Usage:
+## General Usage:
 Here is an example of how to use the SQS broker with the S3 backend:
 
 ```python
@@ -29,11 +29,13 @@ from taskiq_aio_sqs import SQSBroker, S3Backend
 
 s3_result_backend = S3Backend(
     endpoint_url="http://localhost:4566",
+    bucket_name="response-bucket",  # bucket must exist
 )
 
 broker = SQSBroker(
     endpoint_url="http://localhost:4566",
     result_backend=s3_result_backend,
+    sqs_queue_name="my-queue",
 )
 
 
@@ -53,6 +55,87 @@ if __name__ == "__main__":
     asyncio.run(main())
 
 ```
+### Delayed Tasks:
+
+Delayed tasks can be created in 3 ways:
+ - by using the `delay` parameter in the task decorator
+ - by using the kicker with the `delay` label
+ - by setting the `delay_seconds` parameter in the broker, which will apply to all tasks processed by the broker.
+
+Here's an example of how to use delayed tasks:
+
+```python
+broker = SQSBroker(
+    endpoint_url="http://localhost:4566",
+    delay_seconds=3,
+    sqs_queue_name="my-queue",
+)
+
+@broker.task()
+async def general_task() -> int:
+    return 1
+
+@broker.task(delay=7)
+async def delayed_task() -> int:
+    return 1
+
+async def main():
+    await broker.startup()
+    # This message will be received by workers after 3 seconds
+    # delay using the delay_seconds parameter in the broker init.
+    await general_task.kiq()
+
+    # This message will be received by workers after 7 seconds delay.
+    await delayed_task.kiq()
+
+    # This message is going to be received after the delay in 4 seconds.
+    # Since we overriden the `delay` label using kicker.
+    await delayed_task.kicker().with_labels(delay=4).kiq()
+
+```
+
+### Extended Messages with S3:
+
+You can also use S3 to store messages that are too large for SQS. To do this, you need to set the `s3_extended_bucket_name` parameter in the broker configuration.
+
+Here's an example of this behaviour:
+```python
+pub_broker = SQSBroker(
+    endpoint_url="http://localhost:4566",
+    sqs_queue_name="my-queue",
+    s3_extended_bucket_name="response-bucket",
+)
+
+sub_broker = SQSBroker(
+    endpoint_url="http://localhost:4566",
+    s3_extended_bucket_name="response-bucket",
+)
+
+LARGE_MESSAGE = b"x" * (256 * 1024 + 1)  # 256 KB is the limit for SQS
+
+@pub_broker.task()
+async def large_task() -> bytes:
+    return LARGE_MESSAGE
+
+
+async def main():
+    await pub_broker.startup()
+    await sub_broker.startup()
+    # This message will store data in S3 and send a reference to SQS
+    # This reference will include the S3 bucket and key.
+    await large_task.kiq()
+
+    async for msg in sub_broker.listen():
+        message = msg
+        break  # Stop after receiving one message
+
+    # The message will be automatically retrieved from S3
+    # and the full data will be available in the message.
+    assert message.data == LARGE_MESSAGE
+
+
+```
+
 ## Configuration:
 
 SQS Broker parameters:

@@ -23,7 +23,12 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-dependencies = ["botocore~=1.35.16", "aiobotocore~=2.15.0","taskiq[orjson]>=0.11.7,<1"]
+dependencies = [
+    "pydantic>=1.0,<=3.0",
+    "botocore~=1.35.16",
+    "aiobotocore~=2.15.0",
+    "taskiq[orjson]>=0.11.7,<1"
+]
 dynamic = ["version"]
 
 [tool.setuptools-git-versioning]
@@ -89,6 +94,7 @@ lint.ignore = [
     "ANN401",  # typing.Any are disallowed in `**kwargs
     "PLR0913", # Too many arguments for function call
     "D106",    # Missing docstring in public nested class
+    "SIM210",  # Unnecessary if-expr-with-true-false
 ]
 exclude = [".venv/"]
 lint.mccabe = { max-complexity = 10 }
@@ -102,6 +108,7 @@ line-length = 88
     "SLF001", # Private member accessed
     "S311",   # Standard pseudo-random generators are not suitable for security/cryptographic purposes
     "D101",   # Missing docstring in public class
+    "PLR2004", # Magic value used in comparison
 ]
 
 [tool.ruff.lint.pydocstyle]
