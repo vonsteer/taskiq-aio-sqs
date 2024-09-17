@@ -5,15 +5,17 @@ import json
 import logging
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     AsyncGenerator,
     Awaitable,
     Callable,
     Generator,
-    Optional,
 )
 
 from aiobotocore.session import get_session
+from annotated_types import Ge, Le
 from botocore.exceptions import ClientError
+from pydantic import TypeAdapter
 from taskiq import AsyncBroker
 from taskiq.abc.result_backend import AsyncResultBackend
 from taskiq.acks import AckableMessage
@@ -31,6 +33,8 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
+DelaySeconds = TypeAdapter(Annotated[int, Le(900), Ge(0)])
+MaxNumberOfMessages = TypeAdapter(Annotated[int, Le(10), Ge(0)])
 
 
 class SQSBroker(AsyncBroker):
@@ -44,12 +48,32 @@ class SQSBroker(AsyncBroker):
         aws_access_key_id: str | None = None,
         aws_secret_access_key: str | None = None,
         use_task_id_for_deduplication: bool = False,
-        wait_time_seconds: int = 0,
+        wait_time_seconds: int = 10,
         max_number_of_messages: int = 1,
+        delay_seconds: int = 0,
         s3_extended_bucket_name: str | None = None,
-        result_backend: Optional[AsyncResultBackend] = None,
-        task_id_generator: Optional[Callable[[], str]] = None,
+        result_backend: AsyncResultBackend | None = None,
+        task_id_generator: Callable[[], str] | None = None,
     ) -> None:
+        """Initialize the SQS broker.
+
+        :param endpoint_url: The SQS endpoint URL.
+        :param sqs_queue_name: The name of the SQS queue.
+        :param region_name: The AWS region name.
+        :param aws_access_key_id: The AWS access key ID.
+        :param aws_secret_access_key: The AWS secret access key.
+        :param use_task_id_for_deduplication: Whether to use task ID for deduplication.
+        :param wait_time_seconds: The wait time for long polling.
+        :param max_number_of_messages: The maximum number of messages to retrieve
+        (0-10).
+        :param delay_seconds: The delay for message delivery (0-900), this will
+        configure a default.
+        :param s3_extended_bucket_name: The S3 bucket name for extended storage.
+        :param result_backend: The result backend for task results.
+        :param task_id_generator: A callable to generate task IDs.
+
+        :raises BrokerConfigError: If the configuration is invalid.
+        """
         super().__init__(result_backend, task_id_generator)
 
         self._aws_region = region_name
@@ -57,17 +81,27 @@ class SQSBroker(AsyncBroker):
         self._aws_secret_access_key = aws_secret_access_key
         self._aws_endpoint_url = endpoint_url
         self._sqs_queue_name = sqs_queue_name
-        self._sqs_queue_url: Optional[str] = None
+        self._is_fifo_queue = True if ".fifo" in sqs_queue_name else False
+        self._sqs_queue_url: str | None = None
         self._session = get_session()
 
-        if max_number_of_messages > constants.MAX_NUMBER_OF_MESSAGES:
-            raise exceptions.BrokerConfigError(
-                "MaxNumberOfMessages can be no greater than 10",
+        try:
+            self.max_number_of_messages = MaxNumberOfMessages.validate_python(
+                max_number_of_messages,
             )
+        except ValueError as e:
+            raise exceptions.BrokerConfigError(
+                "MaxNumberOfMessages can be no greater than 10 or less than 0",
+            ) from e
+        try:
+            self.delay_seconds = DelaySeconds.validate_python(delay_seconds)
+        except ValueError as e:
+            raise exceptions.BrokerConfigError(
+                "DelaySeconds can be no greater than 900 or less than 0",
+            ) from e
 
+        self.wait_time_seconds = wait_time_seconds
         self.use_task_id_for_deduplication = use_task_id_for_deduplication
-        self.wait_time_seconds = max(wait_time_seconds, 0)
-        self.max_number_of_messages = max(max_number_of_messages, 1)
         self.s3_extended_bucket_name = s3_extended_bucket_name
 
     @contextlib.contextmanager
@@ -163,8 +197,9 @@ class SQSBroker(AsyncBroker):
         kwargs: "SendMessageRequestRequestTypeDef" = {
             "QueueUrl": queue_url,
             "MessageBody": message.message.decode("utf-8"),
+            "DelaySeconds": message.labels.get("delay", self.delay_seconds),
         }
-        if ".fifo" in self._sqs_queue_name:
+        if self._is_fifo_queue:
             kwargs["MessageGroupId"] = message.task_name
             if self.use_task_id_for_deduplication:
                 kwargs["MessageDeduplicationId"] = message.task_id
@@ -181,7 +216,7 @@ class SQSBroker(AsyncBroker):
                 if not self.s3_extended_bucket_name:
                     raise exceptions.BrokerConfigError(
                         "Message size is too large for SQS,"
-                        " but no S3 bucket is configured",
+                        " but no S3 bucket is configured!",
                     )
                 s3_key = f"{message.task_id}.json"
                 await self._s3_client.put_object(
@@ -238,7 +273,7 @@ class SQSBroker(AsyncBroker):
                 MessageAttributeNames=["All"],
                 WaitTimeSeconds=self.wait_time_seconds,
             )
-            messages: list["MessageTypeDef"] = results["Messages"]
+            messages: list["MessageTypeDef"] = results.get("Messages", [])
 
             for message in messages:
                 body = message.get("Body")
