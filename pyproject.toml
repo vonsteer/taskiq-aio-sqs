@@ -24,6 +24,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
+    "annotated-types~=0.7.0",
     "pydantic>=1.0,<=3.0",
     "botocore~=1.35.16",
     "aiobotocore~=2.15.0",
