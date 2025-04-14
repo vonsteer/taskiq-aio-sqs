@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from types_aiobotocore_sqs.type_defs import (
         GetQueueUrlResultTypeDef,
         MessageTypeDef,
-        SendMessageRequestRequestTypeDef,
+        SendMessageRequestTypeDef,
     )
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ class SQSBroker(AsyncBroker):
         :param result_backend: The result backend for task results.
         :param task_id_generator: A callable to generate task IDs.
 
-        :raises BrokerConfigError: If the configuration is invalid.
+        :raises BrokerInputConfigError: If the configuration is invalid.
         """
         super().__init__(result_backend, task_id_generator)
 
@@ -89,16 +89,20 @@ class SQSBroker(AsyncBroker):
             self.max_number_of_messages = MaxNumberOfMessages.validate_python(
                 max_number_of_messages,
             )
-        except ValueError as e:
-            raise exceptions.BrokerConfigError(
-                "MaxNumberOfMessages can be no greater than 10 or less than 0",
-            ) from e
+        except ValueError:
+            raise exceptions.BrokerInputConfigError(
+                attribute="MaxNumberOfMessages",
+                number=max_number_of_messages,
+            ) from None
         try:
             self.delay_seconds = DelaySeconds.validate_python(delay_seconds)
-        except ValueError as e:
-            raise exceptions.BrokerConfigError(
-                "DelaySeconds can be no greater than 900 or less than 0",
-            ) from e
+        except ValueError:
+            raise exceptions.BrokerInputConfigError(
+                attribute="DelaySeconds",
+                min_number=0,
+                max_number=900,
+                number=delay_seconds,
+            ) from None
 
         self.wait_time_seconds = wait_time_seconds
         self.use_task_id_for_deduplication = use_task_id_for_deduplication
@@ -115,12 +119,12 @@ class SQSBroker(AsyncBroker):
             error_message = error.get("Message")
             if code == "AWS.SimpleQueueService.NonExistentQueue":
                 raise exceptions.QueueNotFoundError(
-                    f"{self._sqs_queue_name} not found",
+                    queue_name=self._sqs_queue_name,
                 ) from e
             elif code in ["InvalidParameterValue", "NoSuchBucket"]:
-                raise exceptions.BrokerConfigError(error_message) from e
+                raise exceptions.BrokerConfigError(error=error_message) from e
             else:
-                raise exceptions.BrokerError(f"Unexpected error occured: {code}") from e
+                raise exceptions.SQSBrokerError(error=code) from e
 
     async def _get_s3_client(self) -> "S3Client":
         """
@@ -185,7 +189,7 @@ class SQSBroker(AsyncBroker):
     async def build_kick_kwargs(
         self,
         message: BrokerMessage,
-    ) -> "SendMessageRequestRequestTypeDef":
+    ) -> "SendMessageRequestTypeDef":
         """Build the kwargs for the SQS client kick method.
 
         This function can be extended by the end user to
@@ -194,7 +198,7 @@ class SQSBroker(AsyncBroker):
         """
         queue_url = await self._get_queue_url()
 
-        kwargs: "SendMessageRequestRequestTypeDef" = {
+        kwargs: "SendMessageRequestTypeDef" = {
             "QueueUrl": queue_url,
             "MessageBody": message.message.decode("utf-8"),
             "DelaySeconds": message.labels.get("delay", self.delay_seconds),
@@ -214,10 +218,7 @@ class SQSBroker(AsyncBroker):
         with self.handle_exceptions():
             if len(kwargs["MessageBody"]) >= constants.MAX_SQS_MESSAGE_SIZE:
                 if not self.s3_extended_bucket_name:
-                    raise exceptions.BrokerConfigError(
-                        "Message size is too large for SQS,"
-                        " but no S3 bucket is configured!",
-                    )
+                    raise exceptions.ExtendedBucketNameMissingError
                 s3_key = f"{message.task_id}.json"
                 await self._s3_client.put_object(
                     Body=message.message,

@@ -135,16 +135,10 @@ class S3Backend(AsyncResultBackend[_ReturnType]):
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code")
             if code in ["NoSuchKey", "404"]:
-                raise exceptions.ResultIsMissingError(
-                    f"{task_id} is missing in the result backend.",
-                ) from e
-            raise exceptions.S3ResultBackendError(
-                f"Unexpected error occured: {code}",
-            ) from e
+                raise exceptions.ResultIsMissingError(task_id=task_id) from e
+            raise exceptions.S3ResultBackendError(code=code) from e
         if result is None:
-            raise exceptions.ResultIsMissingError(
-                f"{task_id} is missing in the result backend.",
-            )
+            raise exceptions.ResultIsMissingError(task_id=task_id)
 
         taskiq_result = model_validate(
             TaskiqResult[_ReturnType],
@@ -172,7 +166,5 @@ class S3Backend(AsyncResultBackend[_ReturnType]):
             code = e.response.get("Error", {}).get("Code")
             if code in ["NoSuchKey", "404"]:
                 return False
-            raise exceptions.S3ResultBackendError(
-                f"Unexpected error occured: {code}",
-            ) from e
+            raise exceptions.S3ResultBackendError(code=code) from e
         return False
