@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-py_version ?= 3.11
+py_version ?= 3.12
 PYTHON = python${py_version}
 
 .PHONY: help
