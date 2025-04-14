@@ -28,7 +28,7 @@ dependencies = [
     "pydantic>=1.0,<=3.0",
     "botocore~=1.35.16",
     "aiobotocore~=2.15.0",
-    "taskiq[orjson]>=0.11.7,<1"
+    "taskiq[orjson]>=0.11.12,<1"
 ]
 dynamic = ["version"]
 
