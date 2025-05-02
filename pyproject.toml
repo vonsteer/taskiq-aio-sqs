@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools", "setuptools-git-versioning"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "taskiq-aio-sqs"
@@ -36,8 +36,8 @@ dynamic = ["version"]
 [tool.setuptools-git-versioning]
 enabled = true
 
-[project.optional-dependencies]
-dev = [
+[tool.uv]
+dev-dependencies = [
     "ruff==0.11.7",
     "pyright==1.1.380",
     "pre-commit==3.8.0",
