@@ -4,6 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "taskiq-aio-sqs"
+version = "0.3.1"
 description = "SQS/S3 Broker for TaskIQ using Aiobotocore"
 urls = {source = "https://github.com/vonsteer/taskiq-aio-sqs"}
 readme = "README.md"
@@ -31,10 +32,6 @@ dependencies = [
     "aiobotocore~=2.15.0",
     "taskiq[orjson]>=0.11.12,<1"
 ]
-dynamic = ["version"]
-
-[tool.setuptools-git-versioning]
-enabled = true
 
 [tool.uv]
 dev-dependencies = [
@@ -53,6 +50,9 @@ dev-dependencies = [
 testpaths = "tests"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore:The event_loop fixture provided by pytest-asyncio has been redefined:DeprecationWarning",
+]
 
 [tool.ruff]
 # List of enabled rulsets.
@@ -96,8 +96,8 @@ lint.ignore = [
     "D106",    # Missing docstring in public nested class
     "SIM210",  # Unnecessary if-expr-with-true-false
 ]
-exclude = [".venv/"]
 lint.mccabe = { max-complexity = 10 }
+exclude = [".venv/"]
 line-length = 88
 
 [tool.ruff.lint.per-file-ignores]

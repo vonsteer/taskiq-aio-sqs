@@ -18,6 +18,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+      - run: uv version "${{  github.ref_name }}"
       - run: uv build
       - name: Smoke test (wheel)
         run: uv run --isolated --no-project --with dist/*.whl tests/smoke_test.py
