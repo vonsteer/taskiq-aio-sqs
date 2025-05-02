@@ -40,8 +40,8 @@ dependencies = [
     "taskiq[orjson]>=0.11.12,<1"
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "ruff==0.11.7",
     "pyright==1.1.380",
     "pre-commit==3.8.0",
