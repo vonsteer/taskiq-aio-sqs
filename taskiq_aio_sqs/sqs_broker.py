@@ -19,11 +19,11 @@ from pydantic import TypeAdapter
 from taskiq import AsyncBroker
 from taskiq.acks import AckableMessage
 from taskiq.message import BrokerMessage
-from types_aiobotocore_s3.client import S3Client
 
 from taskiq_aio_sqs import constants, exceptions
 
 if TYPE_CHECKING:
+    from types_aiobotocore_s3.client import S3Client
     from types_aiobotocore_sqs.client import SQSClient
     from types_aiobotocore_sqs.type_defs import (
         GetQueueUrlResultTypeDef,
