@@ -88,17 +88,17 @@ async def test_listen_with_delay_seconds(
             delay = end_time - start_time
             break  # Stop after receiving one message
 
-    assert (
-        received_message is not None
-    ), "Message not received within the expected timeframe"
+    assert received_message is not None, (
+        "Message not received within the expected timeframe"
+    )
 
     await received_message.ack()  # type: ignore
 
     # Check if the delay was close to the expected 2 seconds
     # (allow for some margin)
-    assert (
-        2 <= delay <= 5
-    ), f"Expected delay around 2 seconds, but got {delay:.2f} seconds"
+    assert 2 <= delay <= 5, (
+        f"Expected delay around 2 seconds, but got {delay:.2f} seconds"
+    )
 
     # Verify message content
     assert received_message.data == b"test_message"
@@ -122,17 +122,17 @@ async def test_listen_with_delay_seconds_as_label(
             delay = end_time - start_time
             break  # Stop after receiving one message
 
-    assert (
-        received_message is not None
-    ), "Message not received within the expected timeframe"
+    assert received_message is not None, (
+        "Message not received within the expected timeframe"
+    )
 
     await received_message.ack()  # type: ignore
 
     # Check if the delay was close to the expected 1 second
     # (allow for some margin)
-    assert (
-        1 <= delay <= 3
-    ), f"Expected delay around 1 second, but got {delay:.2f} seconds"
+    assert 1 <= delay <= 3, (
+        f"Expected delay around 1 second, but got {delay:.2f} seconds"
+    )
 
     # Verify message content
     assert received_message.data == b"test_message"

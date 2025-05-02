@@ -168,6 +168,6 @@ class S3Backend(AsyncResultBackend[_ReturnType]):
                 pass
             else:
                 raise exceptions.S3ResultBackendError(
-                    code=code
+                    code=code,
                 ) from e  # pragma: no cover
         return False
