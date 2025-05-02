@@ -15,7 +15,7 @@ from taskiq.serializers import ORJSONSerializer
 
 from taskiq_aio_sqs import constants, exceptions
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from types_aiobotocore_s3.client import S3Client
 
 _ReturnType = TypeVar("_ReturnType")
@@ -136,7 +136,7 @@ class S3Backend(AsyncResultBackend[_ReturnType]):
             code = e.response.get("Error", {}).get("Code")
             if code in ["NoSuchKey", "404"]:
                 raise exceptions.ResultIsMissingError(task_id=task_id) from e
-            raise exceptions.S3ResultBackendError(code=code) from e
+            raise exceptions.S3ResultBackendError(code=code) from e  # pragma: no cover
         if result is None:
             raise exceptions.ResultIsMissingError(task_id=task_id)
 
@@ -165,6 +165,9 @@ class S3Backend(AsyncResultBackend[_ReturnType]):
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code")
             if code in ["NoSuchKey", "404"]:
-                return False
-            raise exceptions.S3ResultBackendError(code=code) from e
+                pass
+            else:
+                raise exceptions.S3ResultBackendError(
+                    code=code
+                ) from e  # pragma: no cover
         return False

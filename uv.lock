@@ -1672,6 +1672,7 @@ orjson = [
 
 [[package]]
 name = "taskiq-aio-sqs"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiobotocore" },
@@ -1681,7 +1682,7 @@ dependencies = [
     { name = "taskiq", extra = ["orjson"] },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "genbadge", extra = ["coverage"] },
     { name = "localstack" },
@@ -1699,19 +1700,22 @@ requires-dist = [
     { name = "aiobotocore", specifier = "~=2.15.0" },
     { name = "annotated-types", specifier = "~=0.7.0" },
     { name = "botocore", specifier = "~=1.35.16" },
-    { name = "genbadge", extras = ["coverage"], marker = "extra == 'dev'" },
-    { name = "localstack", marker = "extra == 'dev'", specifier = "~=3.7.2" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = "==3.8.0" },
     { name = "pydantic", specifier = ">=1.0,<=3.0" },
-    { name = "pyright", marker = "extra == 'dev'", specifier = "==1.1.380" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = "~=8.3.3" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = "~=0.24.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = "~=5.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = "==0.11.7" },
     { name = "taskiq", extras = ["orjson"], specifier = ">=0.11.12,<1" },
-    { name = "types-aiobotocore", extras = ["essential"], marker = "extra == 'dev'", specifier = ">=2.8.0" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "genbadge", extras = ["coverage"] },
+    { name = "localstack", specifier = "~=3.7.2" },
+    { name = "pre-commit", specifier = "==3.8.0" },
+    { name = "pyright", specifier = "==1.1.380" },
+    { name = "pytest", specifier = "~=8.3.3" },
+    { name = "pytest-asyncio", specifier = "~=0.24.0" },
+    { name = "pytest-cov", specifier = "~=5.0.0" },
+    { name = "ruff", specifier = "==0.11.7" },
+    { name = "types-aiobotocore", extras = ["essential"], specifier = ">=2.8.0" },
+]
 
 [[package]]
 name = "taskiq-dependencies"

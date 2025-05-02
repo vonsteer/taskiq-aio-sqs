@@ -22,7 +22,7 @@ from taskiq.message import BrokerMessage
 
 from taskiq_aio_sqs import constants, exceptions
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from types_aiobotocore_s3.client import S3Client
     from types_aiobotocore_sqs.client import SQSClient
     from types_aiobotocore_sqs.type_defs import (
@@ -119,7 +119,7 @@ class SQSBroker(AsyncBroker):
             elif code in ["InvalidParameterValue", "NoSuchBucket"]:
                 raise exceptions.BrokerConfigError(error=error_message) from e
             else:
-                raise exceptions.SQSBrokerError(error=code) from e
+                raise exceptions.SQSBrokerError(error=code) from e  # pragma: no cover
 
     async def _get_s3_client(self) -> "S3Client":
         """
@@ -171,8 +171,8 @@ class SQSBroker(AsyncBroker):
 
     async def startup(self) -> None:
         """Starts the SQS broker."""
-        self._sqs_client: SQSClient = await self._get_sqs_client()
-        self._s3_client: S3Client = await self._get_s3_client()
+        self._sqs_client = await self._get_sqs_client()
+        self._s3_client = await self._get_s3_client()
         await self._get_queue_url()
         await super().startup()
 

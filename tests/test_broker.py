@@ -29,6 +29,6 @@ async def test_delay_seconds_error(aws_credentials: dict) -> None:
     with pytest.raises(BrokerConfigError):
         SQSBroker(
             sqs_queue_name="nonexistent-queue",
-            max_number_of_messages=999,
+            delay_seconds=999,
             **aws_credentials,
         )

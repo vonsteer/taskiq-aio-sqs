@@ -12,18 +12,25 @@ requires-python = ">=3.10"
 keywords = ["taskiq", "broker", "aws", "sqs", "s3", "aiobotocore", "taskiq-broker", "queue"]
 license = {file = "LICENSE"}
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Information Technology",
+    "Framework :: AsyncIO",
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
-    "Operating System :: MacOS",
-    "Operating System :: POSIX",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development",
+    "Topic :: System :: Networking",
+    "Typing :: Typed",
+    "Operating System :: OS Independent",
 ]
 dependencies = [
     "annotated-types~=0.7.0",

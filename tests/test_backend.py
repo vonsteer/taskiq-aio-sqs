@@ -82,6 +82,7 @@ async def test_is_result_ready(
     s3_backend: S3Backend,
     taskiq_result: TaskiqResult,
 ) -> None:
+    s3_backend._base_path = "results"
     await s3_backend.set_result("test_task_id", taskiq_result)
 
     assert await s3_backend.is_result_ready("test_task_id") is True
