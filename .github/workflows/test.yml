@@ -22,6 +22,11 @@ jobs:
           enable-cache: true
       - name: Run typing/linting check
         run: make check
+      - run: uv build
+      - name: Smoke test (wheel)
+        run: uv run --isolated --no-project --with dist/*.whl tests/smoke_test.py
+      - name: Smoke test (source distribution)
+        run: uv run --isolated --no-project --with dist/*.tar.gz tests/smoke_test.py
   pytest:
     strategy:
       matrix:
