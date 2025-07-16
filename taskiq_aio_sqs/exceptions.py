@@ -30,14 +30,33 @@ class ExtendedBucketNameMissingError(BrokerConfigError):
     __template__ = "Message size is too large for SQSbut no S3 bucket is configured!"
 
 
-class BrokerInputConfigError(BrokerConfigError):
-    """Error if MaxNumberOfMessages is not between 1 and 10."""
+class ConfigError(BrokerConfigError):
+    """Error if config attribute is not between min_number and max_number."""
 
-    __template__ = "MaxNumberOfMessages must be between 1 and 10, got {number}"
+    __template__ = (
+        "'{attribute}' must be between {min_number} and {max_number}, got {number}"
+    )
     attribute: str
     min_number: int = 1
     max_number: int = 10
     number: int
+
+
+class TaskLabelConfigError(ConfigError):
+    """Config error for task configuration.
+
+    This error is raised when a task configuration is invalid. For example:
+    ```python
+    @broker.task(delay="invalid_delay")
+    def demo_task():
+        pass
+    ```
+    This will raise a `TaskLabelConfigError` because the delay is not an integer.
+    """
+
+
+class BrokerInputConfigError(ConfigError):
+    """Config error for broker input."""
 
 
 class QueueNotFoundError(SQSBrokerError):
