@@ -196,8 +196,21 @@ class SQSBroker(AsyncBroker):
         kwargs: "SendMessageRequestTypeDef" = {
             "QueueUrl": queue_url,
             "MessageBody": message.message.decode("utf-8"),
-            "DelaySeconds": message.labels.get("delay", self.delay_seconds),
         }
+
+        if delay_seconds_raw := message.labels.get("delay", self.delay_seconds):
+            try:
+                delay_seconds = DelaySeconds.validate_python(delay_seconds_raw)
+            except ValueError:
+                raise exceptions.TaskLabelConfigError(
+                    attribute="DelaySeconds",
+                    min_number=0,
+                    max_number=900,
+                    number=delay_seconds_raw,
+                ) from None
+            else:
+                kwargs["DelaySeconds"] = delay_seconds
+
         if self._is_fifo_queue:
             kwargs["MessageGroupId"] = message.task_name
             if self.use_task_id_for_deduplication:

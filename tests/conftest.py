@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from typing import Any, AsyncGenerator, Generator
 
 import pytest
@@ -212,9 +213,10 @@ def huge_broker_message() -> BrokerMessage:
 
 @pytest.fixture
 def delayed_broker_message() -> BrokerMessage:
+    task = uuid.uuid4().hex
     return BrokerMessage(
-        task_id="large_task",
-        task_name="test_task",
+        task_id=task,
+        task_name=task,
         message=b"test_message",
-        labels={"delay": 1},
+        labels={"delay": "2"},
     )

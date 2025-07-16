@@ -7,6 +7,7 @@ from taskiq_aio_sqs import SQSBroker
 from taskiq_aio_sqs.exceptions import (
     BrokerConfigError,
     QueueNotFoundError,
+    TaskLabelConfigError,
 )
 
 
@@ -100,3 +101,47 @@ async def test_kick_fifo_queue(
     assert "Messages" in response
     assert len(response["Messages"]) == 1
     assert response["Messages"][0]["Body"] == "test_message"  # type: ignore
+
+
+@pytest.mark.asyncio
+async def test_kick_failure_with_delay_fifo(
+    sqs_broker_fifo: SQSBroker,
+    fifo_sqs_queue: str,
+    delayed_broker_message: BrokerMessage,
+) -> None:
+    with pytest.raises(BrokerConfigError):
+        # This should raise an error because delay is not supported for FIFO queues
+        await sqs_broker_fifo.kick(delayed_broker_message)
+
+
+@pytest.mark.asyncio
+async def test_kick_with_delay(
+    sqs_broker: SQSBroker,
+    sqs_queue: str,
+    delayed_broker_message: BrokerMessage,
+) -> None:
+    await sqs_broker.kick(delayed_broker_message)
+    response = await sqs_broker._sqs_client.receive_message(QueueUrl=sqs_queue)
+    assert "Messages" not in response
+    response = await sqs_broker._sqs_client.receive_message(
+        QueueUrl=sqs_queue,
+        MaxNumberOfMessages=1,
+        WaitTimeSeconds=3,  # Wait for messages to arrive
+    )
+    assert "Messages" in response
+    assert len(response["Messages"]) == 1
+    assert response["Messages"][0]["Body"] == "test_message"  # type: ignore
+
+
+@pytest.mark.asyncio
+async def test_kick_with_delay_incorrect_param(
+    sqs_broker: SQSBroker,
+    sqs_queue: str,
+    delayed_broker_message: BrokerMessage,
+) -> None:
+    delayed_broker_message.labels["delay"] = "not-an-integer"
+    with pytest.raises(
+        TaskLabelConfigError,
+        match="'DelaySeconds' must be between 0 and 900, got not-an-integer",
+    ):
+        await sqs_broker.kick(delayed_broker_message)
