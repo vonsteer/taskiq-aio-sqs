@@ -9,7 +9,7 @@ help:  ## Shows this help message
 ##@ 🛠  Testing and development
 .PHONY: install
 install: ## Installs package with development dependencies
-	uv sync --all-extras
+	uv sync --all-extras --upgrade
 
 .PHONY: badge
 badge:
