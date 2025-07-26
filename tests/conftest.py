@@ -17,6 +17,7 @@ EXTENDED_BUCKET = "extendeded-bucket"
 FIFO_QUEUE_NAME = "test-request.fifo"
 QUEUE_NAME = "test-request-2"
 
+
 class AWSCredentials(TypedDict):
     endpoint_url: str
     aws_access_key_id: str
@@ -30,7 +31,7 @@ def aws_credentials() -> AWSCredentials:
     return AWSCredentials(
         endpoint_url=ENDPOINT_URL,
         aws_access_key_id="your-aws-id",
-        aws_secret_access_key="your-aws-access-key",
+        aws_secret_access_key="your-aws-access-key",  # noqa: S106
         region_name="us-east-1",
     )
 

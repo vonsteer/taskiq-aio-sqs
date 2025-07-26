@@ -1,11 +1,12 @@
 import pytest
-from tests.conftest import (
-    AWSCredentials,
-)
+
 from taskiq_aio_sqs import SQSBroker
 from taskiq_aio_sqs.exceptions import (
     BrokerConfigError,
     QueueNotFoundError,
+)
+from tests.conftest import (
+    AWSCredentials,
 )
 
 

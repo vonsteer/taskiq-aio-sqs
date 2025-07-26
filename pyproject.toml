@@ -101,6 +101,7 @@ lint.ignore = [
     "PLR0913", # Too many arguments for function call
     "D106",    # Missing docstring in public nested class
     "SIM210",  # Unnecessary if-expr-with-true-false
+    "COM812",  # Comma at the end of a list
 ]
 lint.mccabe = { max-complexity = 10 }
 exclude = [".venv/"]
