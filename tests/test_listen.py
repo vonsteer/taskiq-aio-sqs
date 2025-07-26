@@ -54,6 +54,7 @@ async def test_multiple_messages(sqs_broker: SQSBroker, sqs_queue: str) -> None:
 async def test_listen_extended_message(
     sqs_broker: SQSBroker,
     sqs_queue: str,
+    extended_s3_bucket: str,
     huge_broker_message: BrokerMessage,
 ) -> None:
     await sqs_broker.kick(huge_broker_message)

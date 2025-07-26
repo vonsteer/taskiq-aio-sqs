@@ -19,11 +19,17 @@ badge:
 run-tests:
 	uv run pytest --cov=taskiq_aio_sqs --cov-report term-missing --cov-fail-under=95 --cov-report xml:coverage.xml
 
-.PHONY: test
+.PHONY: test-only ## Run only some tests
+test-only: localstack-init
+test-only: 
+	uv run pytest -vk "$(filter-out $@,$(MAKECMDGOALS))"
+test-only: localstack-stop
+
+.PHONY: test ## Run testing and coverage.
 test: localstack-init run-tests localstack-stop badge ## Run testing and coverage.
 
 .PHONY: test-ci
-test: localstack-init run-tests localstack-stop ## Run testing and coverage.
+test-ci: localstack-init run-tests localstack-stop ## Run testing and coverage.
 
 .PHONY: localstack-init
 localstack-init: ## Starts localstack with init script
