@@ -1,6 +1,5 @@
-import asyncio
 import uuid
-from typing import Any, AsyncGenerator, Generator
+from typing import Any, AsyncGenerator, TypedDict
 
 import pytest
 from aiobotocore.session import get_session
@@ -18,27 +17,26 @@ EXTENDED_BUCKET = "extendeded-bucket"
 FIFO_QUEUE_NAME = "test-request.fifo"
 QUEUE_NAME = "test-request-2"
 
+class AWSCredentials(TypedDict):
+    endpoint_url: str
+    aws_access_key_id: str
+    aws_secret_access_key: str
+    region_name: str
+
 
 @pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    loop = asyncio.get_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest.fixture(scope="session")
-def aws_credentials() -> dict[str, Any]:
+def aws_credentials() -> AWSCredentials:
     """Mocked AWS Credentials for moto."""
-    return {
-        "endpoint_url": ENDPOINT_URL,
-        "aws_access_key_id": "your-aws-id",
-        "aws_secret_access_key": "your-aws-access-key",
-        "region_name": "us-east-1",
-    }
+    return AWSCredentials(
+        endpoint_url=ENDPOINT_URL,
+        aws_access_key_id="your-aws-id",
+        aws_secret_access_key="your-aws-access-key",
+        region_name="us-east-1",
+    )
 
 
 @pytest.fixture(scope="function")
-async def sqs_client(aws_credentials: dict[str, Any]) -> AsyncGenerator[SQSClient, Any]:
+async def sqs_client(aws_credentials: AWSCredentials) -> AsyncGenerator[SQSClient, Any]:
     client_context = get_session().create_client(
         "sqs",
         **aws_credentials,
@@ -48,7 +46,7 @@ async def sqs_client(aws_credentials: dict[str, Any]) -> AsyncGenerator[SQSClien
 
 
 @pytest.fixture(scope="function")
-async def s3_client(aws_credentials: dict[str, Any]) -> AsyncGenerator[S3Client, Any]:
+async def s3_client(aws_credentials: AWSCredentials) -> AsyncGenerator[S3Client, Any]:
     client_context = get_session().create_client(
         "s3",
         **aws_credentials,
@@ -125,7 +123,7 @@ async def extended_s3_bucket(s3_client: S3Client) -> AsyncGenerator[str, Any]:
 
 @pytest.fixture(scope="function")
 async def sqs_broker(
-    aws_credentials: dict[str, Any],
+    aws_credentials: AWSCredentials,
     sqs_queue: str,
 ) -> AsyncGenerator[SQSBroker, Any]:
     broker = SQSBroker(
@@ -143,7 +141,7 @@ async def sqs_broker(
 
 @pytest.fixture(scope="function")
 async def sqs_broker_fifo(
-    aws_credentials: dict[str, Any],
+    aws_credentials: AWSCredentials,
     fifo_sqs_queue: str,
 ) -> AsyncGenerator[SQSBroker, Any]:
     broker = SQSBroker(
@@ -160,7 +158,7 @@ async def sqs_broker_fifo(
 
 @pytest.fixture(scope="function")
 async def sqs_broker_fifo_no_dedup(
-    aws_credentials: dict[str, Any],
+    aws_credentials: AWSCredentials,
     fifo_sqs_queue: str,
 ) -> AsyncGenerator[SQSBroker, Any]:
     broker = SQSBroker(
@@ -177,7 +175,7 @@ async def sqs_broker_fifo_no_dedup(
 
 @pytest.fixture(scope="function")
 async def sqs_broker_with_delay_seconds(
-    aws_credentials: dict[str, Any],
+    aws_credentials: AWSCredentials,
     sqs_queue: str,
 ) -> AsyncGenerator[SQSBroker, Any]:
     broker = SQSBroker(
@@ -195,7 +193,7 @@ async def sqs_broker_with_delay_seconds(
 
 @pytest.fixture(scope="function")
 async def s3_backend(
-    aws_credentials: dict[str, Any],
+    aws_credentials: AWSCredentials,
     s3_bucket: str,
 ) -> AsyncGenerator[S3Backend, Any]:
     backend = S3Backend(bucket_name=TEST_BUCKET, **aws_credentials)
@@ -207,7 +205,7 @@ async def s3_backend(
 
 @pytest.fixture(scope="function")
 async def sqs_broker_with_backend(
-    aws_credentials: dict[str, Any],
+    aws_credentials: AWSCredentials,
     sqs_queue: str,
     s3_bucket: str,
     s3_backend: S3Backend,

@@ -1,5 +1,7 @@
 import pytest
-
+from tests.conftest import (
+    AWSCredentials,
+)
 from taskiq_aio_sqs import SQSBroker
 from taskiq_aio_sqs.exceptions import (
     BrokerConfigError,
@@ -8,14 +10,14 @@ from taskiq_aio_sqs.exceptions import (
 
 
 @pytest.mark.asyncio
-async def test_get_queue_url_client_error(aws_credentials: dict) -> None:
+async def test_get_queue_url_client_error(aws_credentials: AWSCredentials) -> None:
     broker = SQSBroker(sqs_queue_name="nonexistent-queue", **aws_credentials)
     with pytest.raises(QueueNotFoundError):
         await broker.startup()
 
 
 @pytest.mark.asyncio
-async def test_max_number_of_messages_error(aws_credentials: dict) -> None:
+async def test_max_number_of_messages_error(aws_credentials: AWSCredentials) -> None:
     with pytest.raises(BrokerConfigError):
         SQSBroker(
             sqs_queue_name="nonexistent-queue",
@@ -25,7 +27,7 @@ async def test_max_number_of_messages_error(aws_credentials: dict) -> None:
 
 
 @pytest.mark.asyncio
-async def test_delay_seconds_error(aws_credentials: dict) -> None:
+async def test_delay_seconds_error(aws_credentials: AWSCredentials) -> None:
     with pytest.raises(BrokerConfigError):
         SQSBroker(
             sqs_queue_name="nonexistent-queue",

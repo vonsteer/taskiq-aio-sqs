@@ -19,11 +19,10 @@ badge:
 run-tests:
 	uv run pytest --cov=taskiq_aio_sqs --cov-report term-missing --cov-fail-under=95 --cov-report xml:coverage.xml
 
-.PHONY: test-only ## Run only some tests
+.PHONY: test-only ## Run only some tests (usage: make test-only filter=test_name)
 test-only: localstack-init
-test-only: 
-	uv run pytest -vk "$(filter-out $@,$(MAKECMDGOALS))"
-test-only: localstack-stop
+	uv run pytest -vk "$(filter)" || true
+	$(MAKE) localstack-stop
 
 .PHONY: test ## Run testing and coverage.
 test: localstack-init run-tests localstack-stop badge ## Run testing and coverage.
