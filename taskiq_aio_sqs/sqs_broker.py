@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import math
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -200,7 +201,9 @@ class SQSBroker(AsyncBroker):
 
         if delay_seconds_raw := message.labels.get("delay", self.delay_seconds):
             try:
-                delay_seconds = DelaySeconds.validate_python(delay_seconds_raw)
+                delay_seconds = DelaySeconds.validate_python(
+                    math.ceil(float(delay_seconds_raw))
+                )
             except ValueError:
                 raise exceptions.TaskLabelConfigError(
                     attribute="DelaySeconds",
