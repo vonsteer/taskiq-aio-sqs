@@ -200,6 +200,10 @@ class SQSBroker(AsyncBroker):
 
         if delay_seconds_raw := message.labels.get("delay", self.delay_seconds):
             try:
+                if isinstance(delay_seconds_raw, str) and "." in delay_seconds_raw:
+                    delay_seconds_raw = float(delay_seconds_raw)
+                if isinstance(delay_seconds_raw, float):
+                    delay_seconds_raw = round(delay_seconds_raw)
                 delay_seconds = DelaySeconds.validate_python(delay_seconds_raw)
             except ValueError:
                 raise exceptions.TaskLabelConfigError(

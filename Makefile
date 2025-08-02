@@ -9,7 +9,7 @@ help:  ## Shows this help message
 ##@ 🛠  Testing and development
 .PHONY: install
 install: ## Installs package with development dependencies
-	uv sync --all-extras
+	uv sync --all-extras --upgrade
 
 .PHONY: badge
 badge:
@@ -19,11 +19,16 @@ badge:
 run-tests:
 	uv run pytest --cov=taskiq_aio_sqs --cov-report term-missing --cov-fail-under=95 --cov-report xml:coverage.xml
 
-.PHONY: test
+.PHONY: test-only ## Run only some tests (usage: make test-only filter=test_name)
+test-only: localstack-init
+	uv run pytest -vk "$(filter)" || true
+	$(MAKE) localstack-stop
+
+.PHONY: test ## Run testing and coverage.
 test: localstack-init run-tests localstack-stop badge ## Run testing and coverage.
 
 .PHONY: test-ci
-test: localstack-init run-tests localstack-stop ## Run testing and coverage.
+test-ci: localstack-init run-tests localstack-stop ## Run testing and coverage.
 
 .PHONY: localstack-init
 localstack-init: ## Starts localstack with init script

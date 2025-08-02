@@ -1,3 +1,5 @@
+from typing import Any
+
 from taskiq.exceptions import (
     BrokerError,
     ResultBackendError,
@@ -39,7 +41,7 @@ class ConfigError(BrokerConfigError):
     attribute: str
     min_number: int = 1
     max_number: int = 10
-    number: int
+    number: Any
 
 
 class TaskLabelConfigError(ConfigError):
