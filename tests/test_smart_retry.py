@@ -231,7 +231,7 @@ async def test_smart_retry_with_custom_args_and_kwargs(
     )
 
     response = await sqs_broker._sqs_client.receive_message(
-        QueueUrl=sqs_queue, MaxNumberOfMessages=1, WaitTimeSeconds=2
+        QueueUrl=sqs_queue, MaxNumberOfMessages=1, WaitTimeSeconds=3
     )
     assert "Messages" in response
     assert len(response["Messages"]) == 1

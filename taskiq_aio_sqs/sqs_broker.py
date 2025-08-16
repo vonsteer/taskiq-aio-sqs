@@ -51,6 +51,7 @@ class SQSBroker(AsyncBroker):
         max_number_of_messages: int = 1,
         delay_seconds: int = 0,
         s3_extended_bucket_name: str | None = None,
+        is_fair_queue: bool = False,
     ) -> None:
         """Initialize the SQS broker.
 
@@ -63,9 +64,11 @@ class SQSBroker(AsyncBroker):
         :param wait_time_seconds: The wait time for long polling.
         :param max_number_of_messages: The maximum number of messages to retrieve
         (0-10).
-        :param delay_seconds: The delay for message delivery (0-900), this will
-        configure a default.
+        :param delay_seconds: The delay for message delivery (0-900), defatults to 0.
         :param s3_extended_bucket_name: The S3 bucket name for extended storage.
+        :param is_fair_queue: Whether the queue is a fair queue, if True, it will use
+        the task_name as the MessageGroupId for all messages.
+
 
         :raises BrokerInputConfigError: If the configuration is invalid.
         """
@@ -77,6 +80,7 @@ class SQSBroker(AsyncBroker):
         self._aws_endpoint_url = endpoint_url
         self._sqs_queue_name = sqs_queue_name
         self._is_fifo_queue = True if ".fifo" in sqs_queue_name else False
+        self._is_fair_queue = is_fair_queue
         self._sqs_queue_url: str | None = None
         self._session = get_session()
 
@@ -215,10 +219,10 @@ class SQSBroker(AsyncBroker):
             else:
                 kwargs["DelaySeconds"] = delay_seconds
 
-        if self._is_fifo_queue:
+        if self._is_fifo_queue or self._is_fair_queue:
             kwargs["MessageGroupId"] = message.task_name
-            if self.use_task_id_for_deduplication:
-                kwargs["MessageDeduplicationId"] = message.task_id
+        if self._is_fifo_queue and self.use_task_id_for_deduplication:
+            kwargs["MessageDeduplicationId"] = message.task_id
         return kwargs
 
     async def kick(self, message: BrokerMessage) -> None:
