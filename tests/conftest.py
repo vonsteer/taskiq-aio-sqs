@@ -15,6 +15,7 @@ TEST_BUCKET = "test-bucket"
 EXTENDED_BUCKET = "extendeded-bucket"
 
 FIFO_QUEUE_NAME = "test-request.fifo"
+
 QUEUE_NAME = "test-request-2"
 
 
@@ -153,6 +154,25 @@ async def sqs_broker_fifo(
     await broker.startup()
     assert broker._sqs_client
     assert broker._sqs_queue_url
+    yield broker
+    await broker.shutdown()
+
+
+@pytest.fixture(scope="function")
+async def sqs_broker_fair(
+    aws_credentials: AWSCredentials,
+    sqs_queue: str,
+) -> AsyncGenerator[SQSBroker, Any]:
+    broker = SQSBroker(
+        sqs_queue_name=QUEUE_NAME,
+        s3_extended_bucket_name=EXTENDED_BUCKET,
+        is_fair_queue=True,
+        **aws_credentials,
+    )
+    await broker.startup()
+    assert broker._sqs_client
+    assert broker._sqs_queue_url
+    assert broker._s3_client
     yield broker
     await broker.shutdown()
 
