@@ -110,7 +110,7 @@ sub_broker = SQSBroker(
     sqs_queue_name="my-queue",
 )
 
-LARGE_MESSAGE = b"x" * (256 * 1024 + 1)  # 256 KB is the limit for SQS
+LARGE_MESSAGE = b"x" * (1024 * 1024 + 1)  # 1 MB is the new limit for SQS
 
 @pub_broker.task()
 async def large_task() -> bytes:
