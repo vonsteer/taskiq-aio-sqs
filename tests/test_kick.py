@@ -104,6 +104,23 @@ async def test_kick_fifo_queue(
 
 
 @pytest.mark.asyncio
+async def test_kick_fair_queue(
+    sqs_broker_fair: SQSBroker,
+    sqs_queue: str,
+    broker_message: BrokerMessage,
+) -> None:
+    await sqs_broker_fair.kick(broker_message)
+
+    response = await sqs_broker_fair._sqs_client.receive_message(
+        QueueUrl=sqs_queue,
+        MaxNumberOfMessages=1,
+    )
+    assert "Messages" in response
+    assert len(response["Messages"]) == 1
+    assert response["Messages"][0]["Body"] == "test_message"  # type: ignore
+
+
+@pytest.mark.asyncio
 async def test_kick_failure_with_delay_fifo(
     sqs_broker_fifo: SQSBroker,
     fifo_sqs_queue: str,
