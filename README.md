@@ -146,11 +146,13 @@ SQS Broker parameters:
 * `use_task_id_for_deduplication` - use task_id for deduplication, this is useful when using a Fifo queue without content based deduplication, defaults to False.
 * `wait_time_seconds` - wait time in seconds for long polling, defaults to 0.
 * `max_number_of_messages` - maximum number of messages to receive, defaults to 1 (max 10).
+* `delay_seconds` - default delay for message delivery (0-900), defaults to 0.
 * `s3_extended_bucket_name` - extended bucket name for the s3 objects,
   adding this will allow the broker to kick messages that are too large for SQS by using S3 as well,
   by default the listen function handles this behaviour, defaults to None.
 * `task_id_generator` - custom task_id generator (Optional).
 * `result_backend` - custom result backend (Optional).
+* `is_fair_queue` - : Whether the queue is a fair queue, if True, it will use the `task_name` as the MessageGroupId for all messages.
 
 
 S3 Result Backend parameters:

@@ -64,8 +64,7 @@ class SQSBroker(AsyncBroker):
         :param wait_time_seconds: The wait time for long polling.
         :param max_number_of_messages: The maximum number of messages to retrieve
         (0-10).
-        :param delay_seconds: The delay for message delivery (0-900), this will
-        configure a default.
+        :param delay_seconds: The delay for message delivery (0-900), defatults to 0.
         :param s3_extended_bucket_name: The S3 bucket name for extended storage.
         :param is_fair_queue: Whether the queue is a fair queue, if True, it will use
         the task_name as the MessageGroupId for all messages.
