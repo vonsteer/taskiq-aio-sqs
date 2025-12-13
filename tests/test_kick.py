@@ -214,6 +214,6 @@ async def test_kick_with_group_id_incorrect_param(
     )  # 129 characters, exceeding the limit
     with pytest.raises(
         StrTaskLabelConfigError,
-        match="'MessageGroupId' must be 1-128 characters long, got .*",
+        match=r"'MessageGroupId' must be 1-128 characters long, got .*",
     ):
         await sqs_broker_fifo.kick(grouped_broker_message)
