@@ -34,6 +34,7 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 DelaySeconds = TypeAdapter(Annotated[int, Le(900), Ge(0)])
 MaxNumberOfMessages = TypeAdapter(Annotated[int, Le(10), Ge(0)])
+MessageGroupId = TypeAdapter(Annotated[str, Le(128), Ge(1)])
 
 
 class SQSBroker(AsyncBroker):
@@ -220,7 +221,18 @@ class SQSBroker(AsyncBroker):
                 kwargs["DelaySeconds"] = delay_seconds
 
         if self._is_fifo_queue or self._is_fair_queue:
-            kwargs["MessageGroupId"] = message.task_name
+            group_id_raw = message.labels.get("group_id", message.task_name)
+            try:
+                group_id = MessageGroupId.validate_python(group_id_raw)
+            except ValueError:
+                raise exceptions.TaskLabelConfigError(
+                    attribute="MessageGroupId",
+                    min_number=1,
+                    max_number=128,
+                    number=group_id_raw,
+                ) from None
+            else:
+                kwargs["MessageGroupId"] = group_id
         if self._is_fifo_queue and self.use_task_id_for_deduplication:
             kwargs["MessageDeduplicationId"] = message.task_id
         return kwargs
