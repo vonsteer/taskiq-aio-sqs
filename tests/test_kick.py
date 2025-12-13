@@ -6,8 +6,9 @@ from taskiq import BrokerMessage
 from taskiq_aio_sqs import SQSBroker
 from taskiq_aio_sqs.exceptions import (
     BrokerConfigError,
+    IntTaskLabelConfigError,
     QueueNotFoundError,
-    TaskLabelConfigError,
+    StrTaskLabelConfigError,
 )
 
 
@@ -97,10 +98,31 @@ async def test_kick_fifo_queue(
     response = await sqs_broker_fifo._sqs_client.receive_message(
         QueueUrl=fifo_sqs_queue,
         MaxNumberOfMessages=1,
+        MessageSystemAttributeNames=["MessageGroupId"],
     )
     assert "Messages" in response
     assert len(response["Messages"]) == 1
     assert response["Messages"][0]["Body"] == "test_message"  # type: ignore
+    assert response["Messages"][0]["Attributes"]["MessageGroupId"] == "test_task"  # type: ignore
+
+
+@pytest.mark.asyncio
+async def test_kick_fifo_queue_custom_group(
+    sqs_broker_fifo: SQSBroker,
+    fifo_sqs_queue: str,
+    grouped_broker_message: BrokerMessage,
+) -> None:
+    await sqs_broker_fifo.kick(grouped_broker_message)
+
+    response = await sqs_broker_fifo._sqs_client.receive_message(
+        QueueUrl=fifo_sqs_queue,
+        MaxNumberOfMessages=1,
+        MessageSystemAttributeNames=["MessageGroupId"],
+    )
+    assert "Messages" in response
+    assert len(response["Messages"]) == 1
+    assert response["Messages"][0]["Body"] == "test_message"  # type: ignore
+    assert response["Messages"][0]["Attributes"]["MessageGroupId"] == "test_group"  # type: ignore
 
 
 @pytest.mark.asyncio
@@ -110,6 +132,23 @@ async def test_kick_fair_queue(
     broker_message: BrokerMessage,
 ) -> None:
     await sqs_broker_fair.kick(broker_message)
+
+    response = await sqs_broker_fair._sqs_client.receive_message(
+        QueueUrl=sqs_queue,
+        MaxNumberOfMessages=1,
+    )
+    assert "Messages" in response
+    assert len(response["Messages"]) == 1
+    assert response["Messages"][0]["Body"] == "test_message"  # type: ignore
+
+
+@pytest.mark.asyncio
+async def test_kick_fair_queue_custom_group(
+    sqs_broker_fair: SQSBroker,
+    sqs_queue: str,
+    grouped_broker_message: BrokerMessage,
+) -> None:
+    await sqs_broker_fair.kick(grouped_broker_message)
 
     response = await sqs_broker_fair._sqs_client.receive_message(
         QueueUrl=sqs_queue,
@@ -158,7 +197,23 @@ async def test_kick_with_delay_incorrect_param(
 ) -> None:
     delayed_broker_message.labels["delay"] = "not-an-integer"
     with pytest.raises(
-        TaskLabelConfigError,
+        IntTaskLabelConfigError,
         match="'DelaySeconds' must be between 0 and 900, got not-an-integer",
     ):
         await sqs_broker.kick(delayed_broker_message)
+
+
+@pytest.mark.asyncio
+async def test_kick_with_group_id_incorrect_param(
+    sqs_broker_fifo: SQSBroker,
+    fifo_sqs_queue: str,
+    grouped_broker_message: BrokerMessage,
+) -> None:
+    grouped_broker_message.labels["group_id"] = (
+        "a" * 129
+    )  # 129 characters, exceeding the limit
+    with pytest.raises(
+        StrTaskLabelConfigError,
+        match="'MessageGroupId' must be 1-128 characters long, got .*",
+    ):
+        await sqs_broker_fifo.kick(grouped_broker_message)

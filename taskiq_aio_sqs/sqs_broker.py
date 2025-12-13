@@ -42,7 +42,7 @@ MessageGroupId = TypeAdapter(
         Field(
             min_length=1,
             max_length=128,
-            pattern=r'^[a-zA-Z0-9!"#$%&\'()*+,./:;<=>?@[\\\]^_`{|}~-]+$',
+            pattern=r"^[a-zA-Z0-9!\"#$%&'()*+,\-.\/:;<=>?@\[\\\]^_`\{|\}~]+$",
         ),
     ]
 )
@@ -103,7 +103,7 @@ class SQSBroker(AsyncBroker):
         except ValueError:
             raise exceptions.BrokerInputConfigError(
                 attribute="MaxNumberOfMessages",
-                number=max_number_of_messages,
+                value=max_number_of_messages,
             ) from None
         try:
             self.delay_seconds = DelaySeconds.validate_python(delay_seconds)
@@ -112,7 +112,7 @@ class SQSBroker(AsyncBroker):
                 attribute="DelaySeconds",
                 min_number=0,
                 max_number=900,
-                number=delay_seconds,
+                value=delay_seconds,
             ) from None
 
         self.wait_time_seconds = wait_time_seconds
@@ -222,11 +222,11 @@ class SQSBroker(AsyncBroker):
                     delay_seconds_raw = round(delay_seconds_raw)
                 delay_seconds = DelaySeconds.validate_python(delay_seconds_raw)
             except ValueError:
-                raise exceptions.TaskLabelConfigError(
+                raise exceptions.IntTaskLabelConfigError(
                     attribute="DelaySeconds",
                     min_number=0,
                     max_number=900,
-                    number=delay_seconds_raw,
+                    value=delay_seconds_raw,
                 ) from None
             else:
                 kwargs["DelaySeconds"] = delay_seconds
@@ -236,11 +236,11 @@ class SQSBroker(AsyncBroker):
             try:
                 group_id = MessageGroupId.validate_python(group_id_raw)
             except ValueError:
-                raise exceptions.TaskLabelConfigError(
+                raise exceptions.StrTaskLabelConfigError(
                     attribute="MessageGroupId",
                     min_number=1,
                     max_number=128,
-                    number=group_id_raw,
+                    value=group_id_raw,
                 ) from None
             else:
                 kwargs["MessageGroupId"] = group_id

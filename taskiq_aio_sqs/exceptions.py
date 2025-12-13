@@ -36,15 +36,27 @@ class ConfigError(BrokerConfigError):
     """Error if config attribute is not between min_number and max_number."""
 
     __template__ = (
-        "'{attribute}' must be between {min_number} and {max_number}, got {number}"
+        "'{attribute}' must be between {min_number} and {max_number}, got {value}"
     )
     attribute: str
     min_number: int = 1
     max_number: int = 10
-    number: Any
+    value: Any
 
 
-class TaskLabelConfigError(ConfigError):
+class StrConfigError(ConfigError):
+    """Error if config attribute is not between min_number and max_number."""
+
+    __template__ = (
+        "'{attribute}' must be {min_number}-{max_number} characters long, got {value}"
+    )
+    attribute: str
+    min_number: int = 1
+    max_number: int = 10
+    value: Any
+
+
+class IntTaskLabelConfigError(ConfigError):
     """Config error for task configuration.
 
     This error is raised when a task configuration is invalid. For example:
@@ -53,7 +65,21 @@ class TaskLabelConfigError(ConfigError):
     def demo_task():
         pass
     ```
-    This will raise a `TaskLabelConfigError` because the delay is not an integer.
+    This will raise a `IntTaskLabelConfigError` because the delay is not an integer.
+    """
+
+
+class StrTaskLabelConfigError(StrConfigError):
+    """Config error for task configuration.
+
+    This error is raised when a task configuration is invalid. For example:
+    ```python
+    @broker.task(group_id="a" * 129)
+    def demo_task():
+        pass
+    ```
+    This will raise a `StrTaskLabelConfigError` because the group id is max 128
+    characters.
     """
 
 
