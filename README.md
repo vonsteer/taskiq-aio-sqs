@@ -130,6 +130,51 @@ async def main():
 
 ```
 
+### FIFO Queues and Custom Message Groups:
+
+When using FIFO queues (queue names ending with `.fifo`), you can control message ordering by setting custom MessageGroupId values. Messages with the same MessageGroupId are processed in strict FIFO order, while messages with different MessageGroupId values can be processed in parallel.
+
+Here's an example of how to use custom MessageGroupId:
+
+```python
+broker = SQSBroker(
+    sqs_queue_name="my-queue.fifo",  # FIFO queue
+    use_task_id_for_deduplication=True,  # Recommended for FIFO
+)
+
+@broker.task()
+async def process_user_action(user_id: int, action: str) -> str:
+    # Process user action in order per user
+    return f"Processed {action} for user {user_id}"
+
+async def main():
+    await broker.startup()
+
+    # These tasks will be processed in order for each user,
+    # but different users can be processed in parallel
+    await process_user_action.kicker().with_labels(
+        group_id=f"user_{user_id}"
+    ).kiq(user_id=123, action="login")
+
+    await process_user_action.kicker().with_labels(
+        group_id=f"user_{user_id}"
+    ).kiq(user_id=123, action="update_profile")
+
+    await process_user_action.kicker().with_labels(
+        group_id="user_456"
+    ).kiq(user_id=456, action="purchase")
+
+```
+
+**MessageGroupId Rules:**
+- Must be 1-128 characters long
+- Can contain alphanumeric characters and punctuation: `!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~`
+- If no `group_id` label is provided, the task name will be used as MessageGroupId
+- Tasks with the same MessageGroupId are processed sequentially
+- Tasks with different MessageGroupId values can be processed in parallel
+
+**Note:** Delay functionality is not supported with FIFO queues due to AWS SQS limitations.
+
 ## Configuration:
 
 SQS Broker parameters:
@@ -148,6 +193,10 @@ SQS Broker parameters:
 * `task_id_generator` - custom task_id generator (Optional).
 * `result_backend` - custom result backend (Optional).
 * `is_fair_queue` - : Whether the queue is a fair queue, if True, it will use the `task_name` as the MessageGroupId for all messages.
+
+**Task Labels:**
+* `delay` - override the default delay for a specific task (0-900 seconds). Not supported for FIFO queues.
+* `group_id` - set a custom MessageGroupId for FIFO queues or fair queues. Must be 1-128 characters, alphanumeric and specific punctuation only.
 
 
 S3 Result Backend parameters:

@@ -15,7 +15,7 @@ from typing import (
 from aiobotocore.session import get_session
 from annotated_types import Ge, Le
 from botocore.exceptions import ClientError
-from pydantic import TypeAdapter
+from pydantic import Field, TypeAdapter
 from taskiq import AsyncBroker
 from taskiq.acks import AckableMessage
 from taskiq.message import BrokerMessage
@@ -34,6 +34,18 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 DelaySeconds = TypeAdapter(Annotated[int, Le(900), Ge(0)])
 MaxNumberOfMessages = TypeAdapter(Annotated[int, Le(10), Ge(0)])
+# The length of MessageGroupId is 1-128 characters. Valid values: alphanumeric
+# characters and punctuation (!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~).
+MessageGroupId = TypeAdapter(
+    Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=128,
+            pattern=r"^[a-zA-Z0-9!\"#$%&'()*+,\-.\/:;<=>?@\[\\\]^_`\{|\}~]+$",
+        ),
+    ]
+)
 
 
 class SQSBroker(AsyncBroker):
@@ -91,7 +103,7 @@ class SQSBroker(AsyncBroker):
         except ValueError:
             raise exceptions.BrokerInputConfigError(
                 attribute="MaxNumberOfMessages",
-                number=max_number_of_messages,
+                value=max_number_of_messages,
             ) from None
         try:
             self.delay_seconds = DelaySeconds.validate_python(delay_seconds)
@@ -100,7 +112,7 @@ class SQSBroker(AsyncBroker):
                 attribute="DelaySeconds",
                 min_number=0,
                 max_number=900,
-                number=delay_seconds,
+                value=delay_seconds,
             ) from None
 
         self.wait_time_seconds = wait_time_seconds
@@ -210,17 +222,28 @@ class SQSBroker(AsyncBroker):
                     delay_seconds_raw = round(delay_seconds_raw)
                 delay_seconds = DelaySeconds.validate_python(delay_seconds_raw)
             except ValueError:
-                raise exceptions.TaskLabelConfigError(
+                raise exceptions.IntTaskLabelConfigError(
                     attribute="DelaySeconds",
                     min_number=0,
                     max_number=900,
-                    number=delay_seconds_raw,
+                    value=delay_seconds_raw,
                 ) from None
             else:
                 kwargs["DelaySeconds"] = delay_seconds
 
         if self._is_fifo_queue or self._is_fair_queue:
-            kwargs["MessageGroupId"] = message.task_name
+            group_id_raw = message.labels.get("group_id", message.task_name)
+            try:
+                group_id = MessageGroupId.validate_python(group_id_raw)
+            except ValueError:
+                raise exceptions.StrTaskLabelConfigError(
+                    attribute="MessageGroupId",
+                    min_number=1,
+                    max_number=128,
+                    value=group_id_raw,
+                ) from None
+            else:
+                kwargs["MessageGroupId"] = group_id
         if self._is_fifo_queue and self.use_task_id_for_deduplication:
             kwargs["MessageDeduplicationId"] = message.task_id
         return kwargs

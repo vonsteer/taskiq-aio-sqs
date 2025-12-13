@@ -271,7 +271,18 @@ def delayed_broker_message() -> BrokerMessage:
     task = uuid.uuid4().hex
     return BrokerMessage(
         task_id=task,
-        task_name=task,
+        task_name="test_task",
         message=b"test_message",
         labels={"delay": "2"},
+    )
+
+
+@pytest.fixture
+def grouped_broker_message() -> BrokerMessage:
+    task = uuid.uuid4().hex
+    return BrokerMessage(
+        task_id=task,
+        task_name="test_task",
+        message=b"test_message",
+        labels={"group_id": "test_group"},
     )

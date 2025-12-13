@@ -17,7 +17,7 @@ badge:
 
 .PHONY: run-tests
 run-tests:
-	uv run pytest --cov=taskiq_aio_sqs --cov-report term-missing --cov-fail-under=95 --cov-report xml:coverage.xml
+	uv run pytest -x --cov=taskiq_aio_sqs --cov-report term-missing --cov-fail-under=95 --cov-report xml:coverage.xml
 
 .PHONY: test-only ## Run only some tests (usage: make test-only filter=test_name)
 test-only: localstack-init
