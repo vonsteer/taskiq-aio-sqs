@@ -15,7 +15,7 @@ from typing import (
 from aiobotocore.session import get_session
 from annotated_types import Ge, Le
 from botocore.exceptions import ClientError
-from pydantic import TypeAdapter
+from pydantic import Field, TypeAdapter
 from taskiq import AsyncBroker
 from taskiq.acks import AckableMessage
 from taskiq.message import BrokerMessage
@@ -34,7 +34,18 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 DelaySeconds = TypeAdapter(Annotated[int, Le(900), Ge(0)])
 MaxNumberOfMessages = TypeAdapter(Annotated[int, Le(10), Ge(0)])
-MessageGroupId = TypeAdapter(Annotated[str, Le(128), Ge(1)])
+# The length of MessageGroupId is 1-128 characters. Valid values: alphanumeric
+# characters and punctuation (!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~).
+MessageGroupId = TypeAdapter(
+    Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=128,
+            pattern=r'^[a-zA-Z0-9!"#$%&\'()*+,./:;<=>?@[\\\]^_`{|}~-]+$',
+        ),
+    ]
+)
 
 
 class SQSBroker(AsyncBroker):
