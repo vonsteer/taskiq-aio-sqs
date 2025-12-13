@@ -25,6 +25,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Software Development :: Libraries",
     "Topic :: Software Development",
@@ -56,9 +57,6 @@ dev = [
 testpaths = "tests"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-filterwarnings = [
-    "ignore:The event_loop fixture provided by pytest-asyncio has been redefined:DeprecationWarning",
-]
 
 [tool.ruff]
 # List of enabled rulsets.
