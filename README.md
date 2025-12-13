@@ -9,9 +9,15 @@
 This library provides you with a fully asynchronous SQS broker and S3 backend for TaskIQ using aiobotocore.
 Inspired by the [taskiq-sqs](https://github.com/ApeWorX/taskiq-sqs) broker.
 
-Besides the SQS broker, this library also provides an S3 backend for the results, this is useful when the results are too large for SQS.
-Addidionally, the broker itself can be configured to use S3 + SQS for messages that are too large for SQS,
-replicating the behaviour of the [Amazon Extended Client Library](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-managing-large-messages.html).
+## Key Features
+
+- **Async SQS Broker**: Fully asynchronous SQS message broker with support for standard and FIFO queues ([see General Usage](#general-usage))
+- **S3 Result Backend**: Store task results in S3, ideal for large result payloads ([see General Usage](#general-usage))
+- **Extended Messages**: Automatic S3 storage for messages exceeding SQS limits ([see Extended Messages with S3](#extended-messages-with-s3))
+- **Message Batching**: Improved performance + cost reduction through batching multiple messages in single SQS operations ([see Message Batching](#message-batching))
+- **Delayed Tasks**: Schedule tasks with configurable delays (0-900 seconds) ([see Delayed Tasks](#delayed-tasks))
+- **FIFO Queue Support**: Message ordering and deduplication with custom MessageGroupId control per task/message ([see FIFO Queues and Custom Message Groups](#fifo-queues-and-custom-message-groups))
+- **Fair Queues**: Distribute tasks evenly across message groups for balanced processing ([see Configuration](#configuration))
 
 ## Installation
 
@@ -89,6 +95,67 @@ async def main():
     await delayed_task.kicker().with_labels(delay=4).kiq()
 
 ```
+
+### Message Batching:
+
+The SQS broker supports message batching to improve throughput and reduce AWS API calls. When batching is enabled, the broker collects multiple messages and sends them in a single SQS batch operation (up to 10 messages per batch).
+
+**Key Benefits:**
+- **Improved Performance**: Reduced number of API calls to SQS
+- **Cost Optimization**: Fewer SQS requests means lower AWS costs
+- **Better Throughput**: Can send up to 10 messages in a single operation
+
+Here's an example of how to enable and configure message batching:
+
+```python
+broker = SQSBroker(
+    sqs_queue_name="my-queue",
+    enable_batching=True,
+    batch_size=5,           # Send batches when 5 messages are collected
+    batch_timeout=2.0,      # Or send after 2 seconds, whichever comes first
+    skip_batch_tasks=["urgent_task"],  # These tasks bypass batching
+)
+
+@broker.task()
+async def normal_task(data: str) -> str:
+    return f"Processed: {data}"
+
+@broker.task()
+async def urgent_task(alert: str) -> str:
+    # This task bypasses batching due to skip_batch_tasks configuration
+    return f"URGENT: {alert}"
+
+async def main():
+    await broker.startup()
+
+    # These messages will be batched together
+    await normal_task.kiq("message 1")
+    await normal_task.kiq("message 2")
+    await normal_task.kiq("message 3")
+    # Batch will be sent when batch_size (5) is reached or batch_timeout (2s) expires
+
+    # This message bypasses batching and is sent immediately
+    await urgent_task.kiq("System alert!")
+
+    # You can also bypass batching for individual tasks using the skip_batching label
+    await normal_task.kicker().with_labels(skip_batching=True).kiq("priority message")
+```
+
+**Batching Configuration:**
+- `enable_batching`: Enable/disable message batching (default: `False`)
+- `batch_size`: Maximum messages per batch, 1-10 (default: `10`)
+- `batch_timeout`: Maximum wait time in seconds before sending partial batch, ≥0.1 (default: `1.0`)
+- `skip_batch_tasks`: List of task names that should always bypass batching (default: `[]`)
+
+**Task-Level Control:**
+- Use the `skip_batching=True` label to bypass batching for specific task calls
+- Tasks listed in `skip_batch_tasks` always bypass batching
+
+**Important Notes:**
+- Batching works with both standard and FIFO queues
+- Messages in the same batch will have the same MessageGroupId when using FIFO queues
+- Batching is automatically disabled for tasks with custom delays + s3 extension
+- The broker ensures all messages are sent when shutting down, even partial batches
 
 ### Extended Messages with S3:
 
@@ -187,6 +254,10 @@ SQS Broker parameters:
 * `wait_time_seconds` - wait time in seconds for long polling, defaults to 0.
 * `max_number_of_messages` - maximum number of messages to receive, defaults to 1 (max 10).
 * `delay_seconds` - default delay for message delivery (0-900), defaults to 0.
+* `enable_batching` - enable message batching for improved performance, defaults to False.
+* `batch_size` - maximum number of messages to batch together (1-10), defaults to 10.
+* `batch_timeout` - maximum time in seconds to wait before sending a partial batch (≥0.1), defaults to 1.0.
+* `skip_batch_tasks` - list of task names that should bypass batching, defaults to None.
 * `s3_extended_bucket_name` - extended bucket name for the s3 objects,
   adding this will allow the broker to kick messages that are too large for SQS by using S3 as well,
   by default the listen function handles this behaviour, defaults to None.
@@ -197,6 +268,7 @@ SQS Broker parameters:
 **Task Labels:**
 * `delay` - override the default delay for a specific task (0-900 seconds). Not supported for FIFO queues.
 * `group_id` - set a custom MessageGroupId for FIFO queues or fair queues. Must be 1-128 characters, alphanumeric and specific punctuation only.
+* `skip_batching` - bypass batching for a specific task call, set to True to send immediately.
 
 
 S3 Result Backend parameters:

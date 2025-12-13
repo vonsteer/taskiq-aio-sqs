@@ -247,6 +247,101 @@ async def sqs_broker_with_backend(
 
 
 @pytest.fixture
+async def batching_broker(
+    aws_credentials: AWSCredentials,
+    sqs_queue: str,
+) -> AsyncGenerator[SQSBroker, None]:
+    """Create a broker with batching enabled."""
+    broker = SQSBroker(
+        sqs_queue_name=QUEUE_NAME,
+        enable_batching=True,
+        batch_size=3,
+        batch_timeout=0.5,
+        **aws_credentials,
+    )
+    await broker.startup()
+    yield broker
+    await broker.shutdown()
+
+
+@pytest.fixture
+async def batching_broker_with_delay(
+    aws_credentials: AWSCredentials,
+    sqs_queue: str,
+) -> AsyncGenerator[SQSBroker, None]:
+    """Create a broker with batching and global delay enabled."""
+    broker = SQSBroker(
+        sqs_queue_name=QUEUE_NAME,
+        enable_batching=True,
+        batch_size=3,
+        batch_timeout=0.5,
+        delay_seconds=2,
+        **aws_credentials,
+    )
+    await broker.startup()
+    yield broker
+    await broker.shutdown()
+
+
+@pytest.fixture
+async def batching_broker_fifo(
+    aws_credentials: AWSCredentials,
+    fifo_sqs_queue: str,
+) -> AsyncGenerator[SQSBroker, None]:
+    """Create a FIFO broker with batching enabled."""
+    broker = SQSBroker(
+        sqs_queue_name=FIFO_QUEUE_NAME,
+        enable_batching=True,
+        batch_size=3,
+        batch_timeout=0.5,
+        use_task_id_for_deduplication=True,
+        **aws_credentials,
+    )
+    await broker.startup()
+    yield broker
+    await broker.shutdown()
+
+
+@pytest.fixture
+async def batching_broker_with_skip_tasks(
+    aws_credentials: AWSCredentials,
+    sqs_queue: str,
+) -> AsyncGenerator[SQSBroker, None]:
+    """Create a broker with batching enabled and skip_batch_tasks configured."""
+    broker = SQSBroker(
+        sqs_queue_name=QUEUE_NAME,
+        enable_batching=True,
+        batch_size=3,
+        batch_timeout=0.5,
+        skip_batch_tasks=["urgent_task", "immediate_task"],
+        **aws_credentials,
+    )
+    await broker.startup()
+    yield broker
+    await broker.shutdown()
+
+
+@pytest.fixture
+async def batching_broker_with_s3(
+    aws_credentials: AWSCredentials,
+    sqs_queue: str,
+    extended_s3_bucket: str,
+) -> AsyncGenerator[SQSBroker, None]:
+    """Create a broker with batching enabled and S3 extended storage."""
+    broker = SQSBroker(
+        sqs_queue_name=QUEUE_NAME,
+        enable_batching=True,
+        batch_size=3,
+        batch_timeout=0.5,
+        s3_extended_bucket_name=extended_s3_bucket,
+        **aws_credentials,
+    )
+    await broker.startup()
+    yield broker
+    await broker.shutdown()
+
+
+@pytest.fixture
 def broker_message() -> BrokerMessage:
     return BrokerMessage(
         task_id="test_task",
