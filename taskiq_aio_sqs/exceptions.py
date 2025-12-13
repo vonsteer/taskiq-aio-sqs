@@ -29,7 +29,7 @@ class BrokerConfigError(SQSBrokerError):
 class ExtendedBucketNameMissingError(BrokerConfigError):
     """Error if no S3 bucket is configured for SQS/S3 extended messages."""
 
-    __template__ = "Message size is too large for SQSbut no S3 bucket is configured!"
+    __template__ = "Message size is too large for SQS but no S3 bucket is configured!"
 
 
 class ConfigError(BrokerConfigError):
@@ -85,6 +85,15 @@ class StrTaskLabelConfigError(StrConfigError):
 
 class BrokerInputConfigError(ConfigError):
     """Config error for broker input."""
+
+
+class BrokerFloatConfigError(BrokerConfigError):
+    """Error if float config attribute is not within valid range."""
+
+    __template__ = "'{attribute}' must be at least {min_value}, got {value}"
+    attribute: str
+    min_value: float
+    value: Any
 
 
 class QueueNotFoundError(SQSBrokerError):

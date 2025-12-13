@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
+import time
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -28,12 +30,15 @@ if TYPE_CHECKING:  # pragma: no cover
     from types_aiobotocore_sqs.type_defs import (
         GetQueueUrlResultTypeDef,
         MessageTypeDef,
+        SendMessageBatchRequestEntryTypeDef,
         SendMessageRequestTypeDef,
     )
 
 logger = logging.getLogger(__name__)
 DelaySeconds = TypeAdapter(Annotated[int, Le(900), Ge(0)])
 MaxNumberOfMessages = TypeAdapter(Annotated[int, Le(10), Ge(0)])
+BatchSize = TypeAdapter(Annotated[int, Le(10), Ge(1)])
+BatchTimeout = TypeAdapter(Annotated[float, Ge(0.1)])
 # The length of MessageGroupId is 1-128 characters. Valid values: alphanumeric
 # characters and punctuation (!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~).
 MessageGroupId = TypeAdapter(
@@ -64,6 +69,10 @@ class SQSBroker(AsyncBroker):
         delay_seconds: int = 0,
         s3_extended_bucket_name: str | None = None,
         is_fair_queue: bool = False,
+        enable_batching: bool = False,
+        batch_size: int = 10,
+        batch_timeout: float = 1.0,
+        skip_batch_tasks: list[str] | None = None,
     ) -> None:
         """Initialize the SQS broker.
 
@@ -80,6 +89,12 @@ class SQSBroker(AsyncBroker):
         :param s3_extended_bucket_name: The S3 bucket name for extended storage.
         :param is_fair_queue: Whether the queue is a fair queue, if True, it will use
         the task_name as the MessageGroupId for all messages.
+        :param enable_batching: Whether to enable message batching for improved
+        throughput.
+        :param batch_size: Maximum number of messages to batch together (1-10).
+        :param batch_timeout: Maximum time in seconds to wait before sending a
+        partial batch.
+        :param skip_batch_tasks: List of task names that should bypass batching.
 
 
         :raises BrokerInputConfigError: If the configuration is invalid.
@@ -118,6 +133,32 @@ class SQSBroker(AsyncBroker):
         self.wait_time_seconds = wait_time_seconds
         self.use_task_id_for_deduplication = use_task_id_for_deduplication
         self.s3_extended_bucket_name = s3_extended_bucket_name
+
+        self._enable_batching = enable_batching
+
+        try:
+            self._batch_size = BatchSize.validate_python(batch_size)
+        except ValueError:
+            raise exceptions.BrokerInputConfigError(
+                attribute="BatchSize",
+                min_number=1,
+                max_number=10,
+                value=batch_size,
+            ) from None
+
+        try:
+            self._batch_timeout = BatchTimeout.validate_python(batch_timeout)
+        except ValueError:
+            raise exceptions.BrokerFloatConfigError(
+                attribute="BatchTimeout",
+                min_value=0.1,
+                value=batch_timeout,
+            ) from None
+
+        self._skip_batch_tasks = set(skip_batch_tasks or [])
+
+        self._batch_queue: asyncio.Queue[SendMessageRequestTypeDef] | None = None
+        self._batch_worker_task: asyncio.Task | None = None
 
     @contextlib.contextmanager
     def handle_exceptions(self) -> Generator[None, None, None]:
@@ -190,10 +231,20 @@ class SQSBroker(AsyncBroker):
         self._sqs_client = await self._get_sqs_client()
         self._s3_client = await self._get_s3_client()
         await self._get_queue_url()
+
+        if self._enable_batching:
+            self._batch_queue = asyncio.Queue()
+            self._batch_worker_task = asyncio.create_task(self._batch_worker())
+
         await super().startup()
 
     async def shutdown(self) -> None:
         """Shuts down the SQS broker."""
+        if self._batch_worker_task:
+            self._batch_worker_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._batch_worker_task
+
         await self._close_client()
         await super().shutdown()
 
@@ -253,6 +304,33 @@ class SQSBroker(AsyncBroker):
 
         :param message: BrokerMessage object.
         """
+        if (
+            self._enable_batching
+            and self._should_batch_message(message)
+            and self._batch_queue is not None
+        ):
+            kwargs = await self.build_kick_kwargs(message)
+            await self._batch_queue.put(kwargs)
+        else:
+            await self._send_single_message(message)
+
+    def _should_batch_message(self, message: BrokerMessage) -> bool:
+        """Determine if a message should be batched or sent immediately."""
+        if message.labels.get("skip_batching", False):
+            return False
+
+        if message.task_name in self._skip_batch_tasks:
+            return False
+
+        # custom delayed messages cannot be batched due to complexity
+        if message.labels.get("delay"):
+            return False
+
+        # s3 messages should be batched separately
+        return len(message.message) < constants.MAX_SQS_MESSAGE_SIZE
+
+    async def _send_single_message(self, message: BrokerMessage) -> None:
+        """Send a single message immediately (original kick behavior)."""
         kwargs = await self.build_kick_kwargs(message)
         with self.handle_exceptions():
             if len(kwargs["MessageBody"]) >= constants.MAX_SQS_MESSAGE_SIZE:
@@ -275,6 +353,135 @@ class SQSBroker(AsyncBroker):
                 }
 
             await self._sqs_client.send_message(**kwargs)
+
+    async def _batch_worker(self) -> None:
+        """Background task that processes batched messages."""
+        if not self._batch_queue:
+            raise exceptions.BrokerConfigError(
+                error="Batch worker started but batch queue is not initialized. "
+                "This indicates a broker configuration error."
+            )
+
+        while True:
+            try:
+                batch = await self._collect_batch()
+                if batch:
+                    await self._send_batch(batch)
+            except asyncio.CancelledError:
+                # Handle any remaining messages in batch
+                batch = await self._collect_remaining_batch()
+                if batch:
+                    await self._send_batch(batch)
+                break
+            except Exception as e:
+                logger.exception("Error in batch worker: %s", e)
+
+    async def _collect_batch(self) -> list[SendMessageRequestTypeDef]:
+        """Collect a batch of messages up to batch_size or timeout."""
+        batch: list[SendMessageRequestTypeDef] = []
+        deadline = None
+        if self._batch_queue:
+            while len(batch) < self._batch_size:
+                timeout = self._calculate_timeout(batch, deadline)
+                if timeout is not None and deadline is None and batch:
+                    deadline = time.monotonic() + self._batch_timeout
+
+                try:
+                    if timeout is None:
+                        kwargs = await self._batch_queue.get()
+                    else:
+                        kwargs = await asyncio.wait_for(
+                            self._batch_queue.get(), timeout=timeout
+                        )
+                    batch.append(kwargs)
+                except asyncio.TimeoutError:
+                    break
+
+        return batch
+
+    def _calculate_timeout(self, batch: list, deadline: float | None) -> float | None:
+        """Calculate timeout for next message wait."""
+        if deadline:
+            return max(0, deadline - time.monotonic())
+        if batch:
+            return self._batch_timeout
+        return None
+
+    async def _collect_remaining_batch(self) -> list[SendMessageRequestTypeDef]:
+        """Collect any remaining messages when shutting down."""
+        batch: list[SendMessageRequestTypeDef] = []
+        if self._batch_queue:
+            while not self._batch_queue.empty():
+                try:
+                    kwargs = self._batch_queue.get_nowait()
+                    batch.append(kwargs)
+                except asyncio.QueueEmpty:
+                    break
+        return batch
+
+    async def _send_batch(self, batch: list[SendMessageRequestTypeDef]) -> None:
+        """Send a batch of messages to SQS."""
+        if not batch:
+            return
+
+        # For FIFO queues, we might need to group by MessageGroupId
+        if self._is_fifo_queue:
+            await self._send_fifo_batch(batch)
+        else:
+            await self._send_standard_batch(batch)
+
+    def _build_batch_entries(
+        self, batch: list[SendMessageRequestTypeDef]
+    ) -> list[SendMessageBatchRequestEntryTypeDef]:
+        """Convert message kwargs to batch entries for both standard and FIFO queues."""
+        entries = []
+        for i, kwargs in enumerate(batch):
+            entry: SendMessageBatchRequestEntryTypeDef = {
+                "Id": str(i),
+                "MessageBody": kwargs["MessageBody"],
+            }
+
+            if "DelaySeconds" in kwargs:
+                entry["DelaySeconds"] = kwargs["DelaySeconds"]
+            if "MessageAttributes" in kwargs:
+                entry["MessageAttributes"] = kwargs["MessageAttributes"]
+            if "MessageGroupId" in kwargs:
+                entry["MessageGroupId"] = kwargs["MessageGroupId"]
+            if "MessageDeduplicationId" in kwargs:
+                entry["MessageDeduplicationId"] = kwargs["MessageDeduplicationId"]
+
+            entries.append(entry)
+        return entries
+
+    async def _send_batch_to_sqs(self, batch: list[SendMessageRequestTypeDef]) -> None:
+        """Send a batch of messages to SQS."""
+        queue_url = await self._get_queue_url()
+        entries = self._build_batch_entries(batch)
+
+        with self.handle_exceptions():
+            await self._sqs_client.send_message_batch(
+                QueueUrl=queue_url, Entries=entries
+            )
+
+    async def _send_standard_batch(
+        self, batch: list[SendMessageRequestTypeDef]
+    ) -> None:
+        """Send batch for standard queues."""
+        await self._send_batch_to_sqs(batch)
+
+    async def _send_fifo_batch(self, batch: list[SendMessageRequestTypeDef]) -> None:
+        """Send batch for FIFO queues, preserving order within groups."""
+        # Group messages by MessageGroupId to maintain ordering
+        groups: dict[str, list[SendMessageRequestTypeDef]] = {}
+        for kwargs in batch:
+            group_id = kwargs.get("MessageGroupId", "default")
+            if group_id not in groups:
+                groups[group_id] = []
+            groups[group_id].append(kwargs)
+
+        # Send each group as a separate batch to preserve ordering
+        for _, group_messages in groups.items():
+            await self._send_batch_to_sqs(group_messages)
 
     def build_ack_fnx(
         self,
