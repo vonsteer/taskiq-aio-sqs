@@ -28,12 +28,10 @@ import asyncio
 from taskiq_aio_sqs import SQSBroker, S3Backend
 
 s3_result_backend = S3Backend(
-    endpoint_url="http://localhost:4566",
     bucket_name="response-bucket",  # bucket must exist
 )
 
 broker = SQSBroker(
-    endpoint_url="http://localhost:4566",
     sqs_queue_name="my-queue",
 ).with_result_backend(s3_result_backend)
 
@@ -65,7 +63,6 @@ Here's an example of how to use delayed tasks:
 
 ```python
 broker = SQSBroker(
-    endpoint_url="http://localhost:4566",
     delay_seconds=3,
     sqs_queue_name="my-queue",
 )
@@ -100,13 +97,11 @@ You can also use S3 to store messages that are too large for SQS. To do this, yo
 Here's an example of this behaviour:
 ```python
 pub_broker = SQSBroker(
-    endpoint_url="http://localhost:4566",
     sqs_queue_name="my-queue",
     s3_extended_bucket_name="response-bucket",
 )
 
 sub_broker = SQSBroker(
-    endpoint_url="http://localhost:4566",
     sqs_queue_name="my-queue",
 )
 
@@ -138,7 +133,7 @@ async def main():
 ## Configuration:
 
 SQS Broker parameters:
-* `endpoint_url` - url to access sqs, this is particularly useful if running on ECS.
+* `endpoint_url` - url to access sqs, this is not required, but is useful when running on localstack.
 * `sqs_queue_name` - name of the sqs queue.
 * `region_name` - region name, defaults to `us-east-1`.
 * `aws_access_key_id` - aws access key id (Optional).
