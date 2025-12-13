@@ -153,7 +153,7 @@ SQS Broker parameters:
 S3 Result Backend parameters:
 * `bucket_name` - name of the s3 bucket.
 * `base_path` - base path for the s3 objects, defaults to "".
-* `endpoint_url` - url to access s3, this is particularly useful if running on ECS.
+* `endpoint_url` - url to access s3, this is not required, but is useful when running on localstack.
 * `region_name` - region name, defaults to `us-east-1`.
 * `aws_access_key_id` - aws access key id (Optional).
 * `aws_secret_access_key` - aws secret access key (Optional).
