@@ -41,8 +41,8 @@ class SQSBroker(AsyncBroker):
 
     def __init__(
         self,
-        endpoint_url: str,
         sqs_queue_name: str,
+        endpoint_url: str | None = None,
         region_name: str = constants.DEFAULT_REGION,
         aws_access_key_id: str | None = None,
         aws_secret_access_key: str | None = None,
@@ -55,8 +55,8 @@ class SQSBroker(AsyncBroker):
     ) -> None:
         """Initialize the SQS broker.
 
-        :param endpoint_url: The SQS endpoint URL.
         :param sqs_queue_name: The name of the SQS queue.
+        :param endpoint_url: The SQS endpoint URL.
         :param region_name: The AWS region name.
         :param aws_access_key_id: The AWS access key ID.
         :param aws_secret_access_key: The AWS secret access key.

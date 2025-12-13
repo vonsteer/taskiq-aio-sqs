@@ -77,7 +77,7 @@ class S3Backend(AsyncResultBackend[_ReturnType]):
     async def startup(self) -> None:
         """Initialize the result backend."""
         self._s3_client = await self._get_client()
-        return await super().shutdown()
+        return await super().startup()
 
     async def shutdown(self) -> None:
         """Shut down the result backend."""
