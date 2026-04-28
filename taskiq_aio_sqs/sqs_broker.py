@@ -363,6 +363,55 @@ class SQSBroker(AsyncBroker):
         queue = self._queues[queue_name]
         return queue_name, queue, queue_url
 
+    def _resolve_delay_seconds(
+        self,
+        message: BrokerMessage,
+        queue: SQSQueue,
+    ) -> int | None:
+        delay_seconds_raw = message.labels.get("delay", self.delay_seconds)
+        if not delay_seconds_raw:
+            return None
+
+        try:
+            if isinstance(delay_seconds_raw, str) and "." in delay_seconds_raw:
+                delay_seconds_raw = float(delay_seconds_raw)
+            if isinstance(delay_seconds_raw, float):
+                delay_seconds_raw = round(delay_seconds_raw)
+            delay_seconds = DelaySeconds.validate_python(delay_seconds_raw)
+        except ValueError:
+            raise exceptions.IntTaskLabelConfigError(
+                attribute="DelaySeconds",
+                min_number=0,
+                max_number=900,
+                value=delay_seconds_raw,
+            ) from None
+
+        if queue.is_fifo:
+            raise exceptions.BrokerConfigError(
+                error="DelaySeconds is not supported for FIFO queues.",
+            )
+
+        return delay_seconds
+
+    def _resolve_message_group_id(
+        self,
+        message: BrokerMessage,
+        queue: SQSQueue,
+    ) -> str | None:
+        if not (queue.is_fifo or self._is_fair_queue):
+            return None
+
+        group_id_raw = message.labels.get("group_id", message.task_name)
+        try:
+            return MessageGroupId.validate_python(group_id_raw)
+        except ValueError:
+            raise exceptions.StrTaskLabelConfigError(
+                attribute="MessageGroupId",
+                min_number=1,
+                max_number=128,
+                value=group_id_raw,
+            ) from None
+
     async def build_kick_kwargs(
         self,
         message: BrokerMessage,
@@ -385,36 +434,14 @@ class SQSBroker(AsyncBroker):
             "MessageBody": message.message.decode("utf-8"),
         }
 
-        if delay_seconds_raw := message.labels.get("delay", self.delay_seconds):
-            try:
-                if isinstance(delay_seconds_raw, str) and "." in delay_seconds_raw:
-                    delay_seconds_raw = float(delay_seconds_raw)
-                if isinstance(delay_seconds_raw, float):
-                    delay_seconds_raw = round(delay_seconds_raw)
-                delay_seconds = DelaySeconds.validate_python(delay_seconds_raw)
-            except ValueError:
-                raise exceptions.IntTaskLabelConfigError(
-                    attribute="DelaySeconds",
-                    min_number=0,
-                    max_number=900,
-                    value=delay_seconds_raw,
-                ) from None
-            else:
-                kwargs["DelaySeconds"] = delay_seconds
+        delay_seconds = self._resolve_delay_seconds(message, resolved_queue)
+        if delay_seconds is not None:
+            kwargs["DelaySeconds"] = delay_seconds
 
-        if resolved_queue.is_fifo or self._is_fair_queue:
-            group_id_raw = message.labels.get("group_id", message.task_name)
-            try:
-                group_id = MessageGroupId.validate_python(group_id_raw)
-            except ValueError:
-                raise exceptions.StrTaskLabelConfigError(
-                    attribute="MessageGroupId",
-                    min_number=1,
-                    max_number=128,
-                    value=group_id_raw,
-                ) from None
-            else:
-                kwargs["MessageGroupId"] = group_id
+        message_group_id = self._resolve_message_group_id(message, resolved_queue)
+        if message_group_id is not None:
+            kwargs["MessageGroupId"] = message_group_id
+
         if resolved_queue.is_fifo and self.use_task_id_for_deduplication:
             kwargs["MessageDeduplicationId"] = message.task_id
         return kwargs

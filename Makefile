@@ -32,13 +32,19 @@ test-ci: ministack-init run-tests ministack-stop ## Run testing and coverage.
 
 .PHONY: ministack-init
 ministack-init: ## Starts ministack AWS emulator
-	uv run ministack &
-	sleep 2
-	curl -f http://localhost:4566/_ministack/health > /dev/null || (echo "MiniStack failed to start"; exit 1)
+	uv run ministack -d
+	@for attempt in 1 2 3 4 5 6 7 8 9 10; do \
+		if curl -fsS http://localhost:4566/_ministack/health > /dev/null; then \
+			exit 0; \
+		fi; \
+		sleep 1; \
+	done; \
+	echo "MiniStack failed to start"; \
+	exit 1
 
 .PHONY: ministack-stop
 ministack-stop: ## Stops ministack AWS emulator
-	uv run ministack stop
+	uv run ministack --stop
 
 # Backwards compatibility aliases
 .PHONY: localstack-init

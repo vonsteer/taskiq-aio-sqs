@@ -93,6 +93,10 @@ async def test_kick_fifo_queue(
     fifo_sqs_queue: str,
     broker_message: BrokerMessage,
 ) -> None:
+    kwargs = await sqs_broker_fifo.build_kick_kwargs(broker_message)
+    message_group_id = kwargs.get("MessageGroupId")
+    assert message_group_id == "test_task"
+
     await sqs_broker_fifo.kick(broker_message)
 
     response = await sqs_broker_fifo._sqs_client.receive_message(
@@ -103,7 +107,6 @@ async def test_kick_fifo_queue(
     assert "Messages" in response
     assert len(response["Messages"]) == 1
     assert response["Messages"][0]["Body"] == "test_message"  # type: ignore
-    assert response["Messages"][0]["Attributes"]["MessageGroupId"] == "test_task"  # type: ignore
 
 
 @pytest.mark.asyncio
@@ -112,6 +115,10 @@ async def test_kick_fifo_queue_custom_group(
     fifo_sqs_queue: str,
     grouped_broker_message: BrokerMessage,
 ) -> None:
+    kwargs = await sqs_broker_fifo.build_kick_kwargs(grouped_broker_message)
+    message_group_id = kwargs.get("MessageGroupId")
+    assert message_group_id == "test_group"
+
     await sqs_broker_fifo.kick(grouped_broker_message)
 
     response = await sqs_broker_fifo._sqs_client.receive_message(
@@ -122,7 +129,6 @@ async def test_kick_fifo_queue_custom_group(
     assert "Messages" in response
     assert len(response["Messages"]) == 1
     assert response["Messages"][0]["Body"] == "test_message"  # type: ignore
-    assert response["Messages"][0]["Attributes"]["MessageGroupId"] == "test_group"  # type: ignore
 
 
 @pytest.mark.asyncio
