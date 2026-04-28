@@ -28,7 +28,7 @@ test-only: localstack-init
 test: localstack-init run-tests localstack-stop badge ## Run testing and coverage.
 
 .PHONY: test-ci
-test-ci: localstack-init run-tests localstack-stop ## Run testing and coverage.
+test-ci: run-tests ## Run testing and coverage.
 
 .PHONY: localstack-init
 localstack-init: ## Starts localstack with init script

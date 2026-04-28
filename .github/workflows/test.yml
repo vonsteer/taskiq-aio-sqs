@@ -39,5 +39,10 @@ jobs:
         with:
           enable-cache: true
           python-version: ${{ matrix.py_version }}
+      - name: Start LocalStack
+        uses: LocalStack/setup-localstack@v0.2.2
+        with:
+          image-tag: '3.4.0'
+          configuration: SQS_ENABLE_MESSAGE_RETENTION_PERIOD=1
       - name: Run pytest check for Python ${{ matrix.py_version }}
         run: make test

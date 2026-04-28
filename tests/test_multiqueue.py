@@ -773,3 +773,27 @@ async def test_receive_messages_includes_visibility_timeout() -> None:
         WaitTimeSeconds=0,
         VisibilityTimeout=7,
     )
+
+
+@pytest.mark.anyio
+async def test_task_decorator_delay_parameter_works(
+    single_queue_broker: SQSBroker,
+) -> None:
+    """Test that @broker.task(delay=N) decorator parameter works."""
+    # Mock the SQS client to verify DelaySeconds is passed
+    original_send_message = single_queue_broker._sqs_client.send_message
+    send_message_mock = AsyncMock(wraps=original_send_message)
+    single_queue_broker._sqs_client.send_message = send_message_mock  # type: ignore[method-assign]
+
+    # Define a task using the decorator with delay parameter
+    @single_queue_broker.task(delay="5")
+    async def delayed_task() -> str:
+        return "delayed"
+
+    # Kick the task
+    await delayed_task.kiq()
+
+    # Verify send_message was called with DelaySeconds
+    send_message_mock.assert_awaited()
+    call_kwargs = send_message_mock.call_args.kwargs
+    assert call_kwargs.get("DelaySeconds") == 5
