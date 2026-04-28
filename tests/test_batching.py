@@ -19,6 +19,10 @@ from taskiq_aio_sqs.exceptions import (
 from tests.conftest import QUEUE_NAME, AWSCredentials
 
 
+def queue_name_from_url(queue_url: str) -> str:
+    return queue_url.rsplit("/", maxsplit=1)[-1]
+
+
 def create_test_message(task_name: str = "test_task", **labels: Any) -> BrokerMessage:
     """Create a test message with optional labels."""
     return BrokerMessage(
@@ -298,7 +302,7 @@ async def test_batch_worker_normal_initialization(
 ) -> None:
     """Test that batch worker works normally when properly initialized."""
     broker = SQSBroker(
-        sqs_queue_name=QUEUE_NAME,
+        sqs_queue_name=queue_name_from_url(sqs_queue),
         enable_batching=True,
         **aws_credentials,
     )
@@ -463,7 +467,7 @@ async def test_disabled_batching_fallback(
 ) -> None:
     """Test that when batching is disabled, messages are sent individually."""
     broker = SQSBroker(
-        sqs_queue_name=QUEUE_NAME,
+        sqs_queue_name=queue_name_from_url(sqs_queue),
         enable_batching=False,  # Disabled
         **aws_credentials,
     )

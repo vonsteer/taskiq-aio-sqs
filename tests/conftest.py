@@ -1,3 +1,6 @@
+# NOTE: These fixtures use unique queue names per test instance because the
+# multi-queue listen and retry coverage additions exposed cross-test leakage when
+# LocalStack reuses static queue names during a long full-suite run.
 import uuid
 from typing import Any, AsyncGenerator, TypedDict
 
@@ -17,6 +20,10 @@ EXTENDED_BUCKET = "extendeded-bucket"
 FIFO_QUEUE_NAME = "test-request.fifo"
 
 QUEUE_NAME = "test-request-2"
+
+
+def _queue_name_from_url(queue_url: str) -> str:
+    return queue_url.rsplit("/", maxsplit=1)[-1]
 
 
 class AWSCredentials(TypedDict):
@@ -59,8 +66,9 @@ async def s3_client(aws_credentials: AWSCredentials) -> AsyncGenerator[S3Client,
 
 @pytest.fixture(scope="function")
 async def fifo_sqs_queue(sqs_client: SQSClient) -> AsyncGenerator[str, Any]:
+    queue_name = f"test-request-{uuid.uuid4().hex}.fifo"
     response = await sqs_client.create_queue(
-        QueueName=FIFO_QUEUE_NAME,
+        QueueName=queue_name,
         Attributes={"FifoQueue": "true"},
     )
     queue_url = response["QueueUrl"]
@@ -70,7 +78,8 @@ async def fifo_sqs_queue(sqs_client: SQSClient) -> AsyncGenerator[str, Any]:
 
 @pytest.fixture(scope="function")
 async def sqs_queue(sqs_client: SQSClient) -> AsyncGenerator[str, Any]:
-    response = await sqs_client.create_queue(QueueName=QUEUE_NAME)
+    queue_name = f"{QUEUE_NAME}-{uuid.uuid4().hex}"
+    response = await sqs_client.create_queue(QueueName=queue_name)
     queue_url = response["QueueUrl"]
     yield queue_url
     await sqs_client.delete_queue(QueueUrl=queue_url)
@@ -129,7 +138,7 @@ async def sqs_broker(
     sqs_queue: str,
 ) -> AsyncGenerator[SQSBroker, Any]:
     broker = SQSBroker(
-        sqs_queue_name=QUEUE_NAME,
+        sqs_queue_name=_queue_name_from_url(sqs_queue),
         s3_extended_bucket_name=EXTENDED_BUCKET,
         **aws_credentials,
     )
@@ -147,7 +156,7 @@ async def sqs_broker_fifo(
     fifo_sqs_queue: str,
 ) -> AsyncGenerator[SQSBroker, Any]:
     broker = SQSBroker(
-        sqs_queue_name=FIFO_QUEUE_NAME,
+        sqs_queue_name=_queue_name_from_url(fifo_sqs_queue),
         use_task_id_for_deduplication=True,
         **aws_credentials,
     )
@@ -164,7 +173,7 @@ async def sqs_broker_fair(
     sqs_queue: str,
 ) -> AsyncGenerator[SQSBroker, Any]:
     broker = SQSBroker(
-        sqs_queue_name=QUEUE_NAME,
+        sqs_queue_name=_queue_name_from_url(sqs_queue),
         s3_extended_bucket_name=EXTENDED_BUCKET,
         is_fair_queue=True,
         **aws_credentials,
@@ -183,7 +192,7 @@ async def sqs_broker_fifo_no_dedup(
     fifo_sqs_queue: str,
 ) -> AsyncGenerator[SQSBroker, Any]:
     broker = SQSBroker(
-        sqs_queue_name=FIFO_QUEUE_NAME,
+        sqs_queue_name=_queue_name_from_url(fifo_sqs_queue),
         use_task_id_for_deduplication=False,
         **aws_credentials,
     )
@@ -200,7 +209,7 @@ async def sqs_broker_with_delay_seconds(
     sqs_queue: str,
 ) -> AsyncGenerator[SQSBroker, Any]:
     broker = SQSBroker(
-        sqs_queue_name=QUEUE_NAME,
+        sqs_queue_name=_queue_name_from_url(sqs_queue),
         use_task_id_for_deduplication=False,
         delay_seconds=2,
         **aws_credentials,
@@ -232,7 +241,7 @@ async def sqs_broker_with_backend(
     s3_backend: S3Backend,
 ) -> AsyncGenerator[SQSBroker, Any]:
     broker = SQSBroker(
-        sqs_queue_name=QUEUE_NAME,
+        sqs_queue_name=_queue_name_from_url(sqs_queue),
         use_task_id_for_deduplication=False,
         delay_seconds=2,
         **aws_credentials,
@@ -253,7 +262,7 @@ async def batching_broker(
 ) -> AsyncGenerator[SQSBroker, None]:
     """Create a broker with batching enabled."""
     broker = SQSBroker(
-        sqs_queue_name=QUEUE_NAME,
+        sqs_queue_name=_queue_name_from_url(sqs_queue),
         enable_batching=True,
         batch_size=3,
         batch_timeout=0.5,
@@ -271,7 +280,7 @@ async def batching_broker_with_delay(
 ) -> AsyncGenerator[SQSBroker, None]:
     """Create a broker with batching and global delay enabled."""
     broker = SQSBroker(
-        sqs_queue_name=QUEUE_NAME,
+        sqs_queue_name=_queue_name_from_url(sqs_queue),
         enable_batching=True,
         batch_size=3,
         batch_timeout=0.5,
@@ -290,7 +299,7 @@ async def batching_broker_fifo(
 ) -> AsyncGenerator[SQSBroker, None]:
     """Create a FIFO broker with batching enabled."""
     broker = SQSBroker(
-        sqs_queue_name=FIFO_QUEUE_NAME,
+        sqs_queue_name=_queue_name_from_url(fifo_sqs_queue),
         enable_batching=True,
         batch_size=3,
         batch_timeout=0.5,
@@ -309,7 +318,7 @@ async def batching_broker_with_skip_tasks(
 ) -> AsyncGenerator[SQSBroker, None]:
     """Create a broker with batching enabled and skip_batch_tasks configured."""
     broker = SQSBroker(
-        sqs_queue_name=QUEUE_NAME,
+        sqs_queue_name=_queue_name_from_url(sqs_queue),
         enable_batching=True,
         batch_size=3,
         batch_timeout=0.5,
@@ -329,7 +338,7 @@ async def batching_broker_with_s3(
 ) -> AsyncGenerator[SQSBroker, None]:
     """Create a broker with batching enabled and S3 extended storage."""
     broker = SQSBroker(
-        sqs_queue_name=QUEUE_NAME,
+        sqs_queue_name=_queue_name_from_url(sqs_queue),
         enable_batching=True,
         batch_size=3,
         batch_timeout=0.5,
@@ -368,7 +377,7 @@ def delayed_broker_message() -> BrokerMessage:
         task_id=task,
         task_name="test_task",
         message=b"test_message",
-        labels={"delay": "2"},
+        labels={"delay": "1"},
     )
 
 

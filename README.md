@@ -25,6 +25,9 @@ Inspired by the [taskiq-sqs](https://github.com/ApeWorX/taskiq-sqs) broker.
 pip install taskiq-aio-sqs
 ```
 
+Requirements:
+- Pydantic v2 (`pydantic>=2.0,<3.0`)
+
 ## General Usage:
 Here is an example of how to use the SQS broker with the S3 backend:
 

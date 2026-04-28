@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 
 [[package]]
@@ -2002,6 +2002,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiobotocore" },
     { name = "annotated-types" },
+    { name = "anyio" },
     { name = "pydantic" },
     { name = "taskiq", extra = ["orjson"] },
 ]
@@ -2023,7 +2024,8 @@ dev = [
 requires-dist = [
     { name = "aiobotocore", specifier = ">=2.23.1" },
     { name = "annotated-types", specifier = "~=0.7.0" },
-    { name = "pydantic", specifier = ">=1.0,<=3.0" },
+    { name = "anyio", specifier = ">=4.0" },
+    { name = "pydantic", specifier = ">=2.0,<3.0" },
     { name = "taskiq", extras = ["orjson"], specifier = ">=0.11.12,<1" },
 ]
 
