@@ -1,6 +1,3 @@
-# NOTE: These fixtures use unique queue names per test instance because the
-# multi-queue listen and retry coverage additions exposed cross-test leakage when
-# LocalStack reuses static queue names during a long full-suite run.
 import uuid
 from typing import Any, AsyncGenerator, TypedDict
 

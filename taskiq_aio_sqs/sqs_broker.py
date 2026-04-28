@@ -92,6 +92,9 @@ class SQSBroker(AsyncBroker):
         :param wait_time_seconds: The wait time for long polling.
         :param max_number_of_messages: The maximum number of messages to retrieve
         (0-10).
+        :param visibility_timeout: Optional visibility timeout (in seconds) for received
+        messages. While a message is being processed, it remains invisible to other
+        consumers. If None, uses the queue's default.
         :param delay_seconds: The delay for message delivery (0-900), defatults to 0.
         :param s3_extended_bucket_name: The S3 bucket name for extended storage.
         :param is_fair_queue: Whether the queue is a fair queue, if True, it will use

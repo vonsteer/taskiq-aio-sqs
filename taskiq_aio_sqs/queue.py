@@ -10,7 +10,19 @@ WAIT_TIME_SECONDS = 20
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class SQSQueue:
-    """Per-queue SQS configuration for SQSBroker."""
+    """Per-queue SQS configuration for SQSBroker.
+
+    Attributes:
+        name: The SQS queue name (or "queue-name.fifo" for FIFO queues).
+        is_fifo: Whether this is a FIFO queue (default: False).
+        max_number_of_messages: Maximum messages to retrieve per poll (1-10,
+            default: 1).
+        wait_time_seconds: Long polling wait time in seconds (0-20, default: 0).
+        visibility_timeout: Optional visibility timeout (in seconds) for received
+            messages. While a message is being processed, it remains invisible to
+            other consumers.
+        options: Optional mapping of additional SQS queue attributes.
+    """
 
     name: str
     is_fifo: bool = False
