@@ -28,7 +28,7 @@ test-only: ministack-init
 test: ministack-init run-tests ministack-stop badge ## Run testing and coverage.
 
 .PHONY: test-ci
-test-ci: run-tests ## Run testing and coverage.
+test-ci: ministack-init run-tests ministack-stop ## Run testing and coverage.
 
 .PHONY: ministack-init
 ministack-init: ## Starts ministack AWS emulator
