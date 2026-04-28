@@ -40,4 +40,4 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.py_version }}
       - name: Run pytest check for Python ${{ matrix.py_version }}
-        run: make test
+        run: make test-ci
