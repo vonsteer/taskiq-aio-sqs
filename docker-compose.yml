@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  ministack:
+    image: ministackorg/ministack:latest
+    container_name: taskiq_aio_sqs_ministack
+    ports:
+      - "4566:4566"
+    environment:
+      # AWS Service Configuration
+      AWS_DEFAULT_REGION: us-east-1
+      # MiniStack Configuration
+      GATEWAY_PORT: 4566
+      MINISTACK_ACCOUNT_ID: "000000000000"
+      MINISTACK_REGION: us-east-1
+      LOG_LEVEL: INFO
+      # Persist state between restarts (optional)
+      PERSIST_STATE: "0"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_ministack/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    volumes:
+      # Optional: Mount init scripts for auto-setup (boot.d, ready.d)
+      # - ./init-scripts:/docker-entrypoint-initaws.d
+
+      # Optional: Persist MiniStack state across restarts
+      # - ministack-data:/tmp/ministack-state
+    networks:
+      - taskiq-network
+
+networks:
+  taskiq-network:
+    driver: bridge
+
+# Optional: Named volume for state persistence
+# volumes:
+#   ministack-data:

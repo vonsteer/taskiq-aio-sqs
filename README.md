@@ -306,7 +306,7 @@ async def main():
 ## Configuration:
 
 SQS Broker parameters:
-* `endpoint_url` - url to access sqs, this is not required, but is useful when running on localstack.
+* `endpoint_url` - url to access sqs, this is not required, but is useful when running on local AWS emulators like MiniStack or LocalStack.
 * `sqs_queue_name` - name of the sqs queue.
 * `region_name` - region name, defaults to `us-east-1`.
 * `aws_access_key_id` - aws access key id (Optional).
@@ -344,7 +344,7 @@ SQS Broker parameters:
 S3 Result Backend parameters:
 * `bucket_name` - name of the s3 bucket.
 * `base_path` - base path for the s3 objects, defaults to "".
-* `endpoint_url` - url to access s3, this is not required, but is useful when running on localstack.
+* `endpoint_url` - url to access s3, this is not required, but is useful when running on local AWS emulators like MiniStack or LocalStack.
 * `region_name` - region name, defaults to `us-east-1`.
 * `aws_access_key_id` - aws access key id (Optional).
 * `aws_secret_access_key` - aws secret access key (Optional).
@@ -381,5 +381,10 @@ To run tests, you can use the following command:
 ```bash
 make test
 ```
-In the background this will setup localstack to replicate the AWS services, and run the tests.
+In the background this will setup MiniStack (free open-source AWS emulator) to replicate the AWS services, and run the tests.
 It will also generate the coverage report and the badge.
+
+You can also use Docker Compose to run MiniStack separately:
+```bash
+docker-compose up -d
+```

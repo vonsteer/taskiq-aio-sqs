@@ -20,23 +20,32 @@ run-tests:
 	uv run pytest -x --cov=taskiq_aio_sqs --cov-report term-missing --cov-fail-under=95 --cov-report xml:coverage.xml
 
 .PHONY: test-only ## Run only some tests (usage: make test-only filter=test_name)
-test-only: localstack-init
+test-only: ministack-init
 	uv run pytest -vk "$(filter)" || true
-	$(MAKE) localstack-stop
+	$(MAKE) ministack-stop
 
 .PHONY: test ## Run testing and coverage.
-test: localstack-init run-tests localstack-stop badge ## Run testing and coverage.
+test: ministack-init run-tests ministack-stop badge ## Run testing and coverage.
 
 .PHONY: test-ci
 test-ci: run-tests ## Run testing and coverage.
 
+.PHONY: ministack-init
+ministack-init: ## Starts ministack AWS emulator
+	uv run ministack &
+	sleep 2
+	curl -f http://localhost:4566/_ministack/health > /dev/null || (echo "MiniStack failed to start"; exit 1)
+
+.PHONY: ministack-stop
+ministack-stop: ## Stops ministack AWS emulator
+	uv run ministack stop
+
+# Backwards compatibility aliases
 .PHONY: localstack-init
-localstack-init: ## Starts localstack with init script
-	SQS_ENABLE_MESSAGE_RETENTION_PERIOD=1 uv run localstack start -d --no-banner; uv run  localstack wait -t 45
+localstack-init: ministack-init
 
 .PHONY: localstack-stop
-localstack-stop: ## Starts localstack with init script
-	uv run localstack stop
+localstack-stop: ministack-stop
 
 ##@ 👷 Quality
 .PHONY: ruff-check
