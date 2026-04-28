@@ -43,6 +43,6 @@ jobs:
         uses: LocalStack/setup-localstack@v0.2.2
         with:
           image-tag: '3.4.0'
-          configuration: SQS_ENABLE_MESSAGE_RETENTION_PERIOD=1
+          configuration: SQS_ENABLE_MESSAGE_RETENTION_PERIOD=1 LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT=1
       - name: Run pytest check for Python ${{ matrix.py_version }}
         run: make test
