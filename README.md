@@ -12,6 +12,7 @@ Inspired by the [taskiq-sqs](https://github.com/ApeWorX/taskiq-sqs) broker.
 ## Key Features
 
 - **Async SQS Broker**: Fully asynchronous SQS message broker with support for standard and FIFO queues ([see General Usage](#general-usage))
+- **Multi-Queue Routing**: Register multiple queues and route tasks per message/task label ([see Multi-Queue Usage](#multi-queue-usage))
 - **S3 Result Backend**: Store task results in S3, ideal for large result payloads ([see General Usage](#general-usage))
 - **Extended Messages**: Automatic S3 storage for messages exceeding SQS limits ([see Extended Messages with S3](#extended-messages-with-s3))
 - **Message Batching**: Improved performance + cost reduction through batching multiple messages in single SQS operations ([see Message Batching](#message-batching))
@@ -24,6 +25,9 @@ Inspired by the [taskiq-sqs](https://github.com/ApeWorX/taskiq-sqs) broker.
 ```bash
 pip install taskiq-aio-sqs
 ```
+
+Requirements:
+- Pydantic v2 (`pydantic>=2.0,<3.0`)
 
 ## General Usage:
 Here is an example of how to use the SQS broker with the S3 backend:
@@ -42,7 +46,7 @@ broker = SQSBroker(
 ).with_result_backend(s3_result_backend)
 
 
-@broker.task
+@broker.task()
 async def i_love_aws() -> None:
     """I hope my cloud bill doesn't get too high!"""
     await asyncio.sleep(5.5)
@@ -50,14 +54,70 @@ async def i_love_aws() -> None:
 
 
 async def main():
+    await broker.startup()
     task = await i_love_aws.kiq()
     print(await task.wait_result())
+    await broker.shutdown()
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 
 ```
+
+### Multi-Queue Usage:
+
+Use `SQSQueue` definitions with `with_queues` / `with_default_queue` before startup, then
+route tasks using the `queue` label.
+
+```python
+from taskiq_aio_sqs import SQSBroker, SQSQueue
+
+broker = SQSBroker(
+    sqs_queue_name="taskiq-default",
+)
+
+critical_queue = SQSQueue(name="taskiq-critical")
+fifo_queue = SQSQueue(name="taskiq-events.fifo", is_fifo=True)
+
+broker.with_queues(critical_queue, fifo_queue)
+
+
+@broker.task(queue="taskiq-critical")
+async def critical_task() -> None:
+    pass
+
+
+@broker.task()
+async def normal_task() -> None:
+    pass
+
+
+async def publish_examples() -> None:
+    await broker.startup()
+
+    # Uses default queue (taskiq-default)
+    await normal_task.kiq()
+
+    # Uses queue from task decorator
+    await critical_task.kiq()
+
+    # Per-call queue override
+    await normal_task.kicker().with_labels(queue="taskiq-critical").kiq()
+
+    # FIFO queue with explicit group
+    await normal_task.kicker().with_labels(
+        queue="taskiq-events.fifo",
+        group_id="orders",
+    ).kiq()
+
+    await broker.shutdown()
+```
+
+Notes:
+- Queue names must be registered with `with_queues` (or be the default queue) before `startup()`.
+- `listen()` consumes from all configured queues.
+
 ### Delayed Tasks:
 
 Delayed tasks can be created in 3 ways:
@@ -91,7 +151,7 @@ async def main():
     await delayed_task.kiq()
 
     # This message is going to be received after the delay in 4 seconds.
-    # Since we overriden the `delay` label using kicker.
+    # Since we override the `delay` label using kicker.
     await delayed_task.kicker().with_labels(delay=4).kiq()
 
 ```
@@ -154,7 +214,8 @@ async def main():
 **Important Notes:**
 - Batching works with both standard and FIFO queues
 - Messages in the same batch will have the same MessageGroupId when using FIFO queues
-- Batching is automatically disabled for tasks with custom delays + s3 extension
+- Messages with per-message `delay` labels are sent immediately (not batched)
+- Messages using S3 extended payload flow are sent immediately (not batched)
 - The broker ensures all messages are sent when shutting down, even partial batches
 
 ### Extended Messages with S3:
@@ -220,11 +281,11 @@ async def main():
     # These tasks will be processed in order for each user,
     # but different users can be processed in parallel
     await process_user_action.kicker().with_labels(
-        group_id=f"user_{user_id}"
+        group_id="user_123"
     ).kiq(user_id=123, action="login")
 
     await process_user_action.kicker().with_labels(
-        group_id=f"user_{user_id}"
+        group_id="user_123"
     ).kiq(user_id=123, action="update_profile")
 
     await process_user_action.kicker().with_labels(
@@ -245,14 +306,15 @@ async def main():
 ## Configuration:
 
 SQS Broker parameters:
-* `endpoint_url` - url to access sqs, this is not required, but is useful when running on localstack.
+* `endpoint_url` - url to access sqs, this is not required, but is useful when running on local AWS emulators like MiniStack or LocalStack.
 * `sqs_queue_name` - name of the sqs queue.
 * `region_name` - region name, defaults to `us-east-1`.
 * `aws_access_key_id` - aws access key id (Optional).
 * `aws_secret_access_key` - aws secret access key (Optional).
 * `use_task_id_for_deduplication` - use task_id for deduplication, this is useful when using a Fifo queue without content based deduplication, defaults to False.
-* `wait_time_seconds` - wait time in seconds for long polling, defaults to 0.
+* `wait_time_seconds` - wait time in seconds for long polling, defaults to 10.
 * `max_number_of_messages` - maximum number of messages to receive, defaults to 1 (max 10).
+* `visibility_timeout` - optional visibility timeout for received messages.
 * `delay_seconds` - default delay for message delivery (0-900), defaults to 0.
 * `enable_batching` - enable message batching for improved performance, defaults to False.
 * `batch_size` - maximum number of messages to batch together (1-10), defaults to 10.
@@ -265,6 +327,14 @@ SQS Broker parameters:
 * `result_backend` - custom result backend (Optional).
 * `is_fair_queue` - : Whether the queue is a fair queue, if True, it will use the `task_name` as the MessageGroupId for all messages.
 
+`SQSQueue` parameters (for multi-queue configuration):
+* `name` - queue name.
+* `is_fifo` - whether queue is FIFO.
+* `max_number_of_messages` - per-queue receive batch size (1-10).
+* `wait_time_seconds` - per-queue long poll wait (0-20).
+* `visibility_timeout` - per-queue visibility timeout.
+* `options` - reserved mapping for queue-level options.
+
 **Task Labels:**
 * `delay` - override the default delay for a specific task (0-900 seconds). Not supported for FIFO queues.
 * `group_id` - set a custom MessageGroupId for FIFO queues or fair queues. Must be 1-128 characters, alphanumeric and specific punctuation only.
@@ -274,7 +344,7 @@ SQS Broker parameters:
 S3 Result Backend parameters:
 * `bucket_name` - name of the s3 bucket.
 * `base_path` - base path for the s3 objects, defaults to "".
-* `endpoint_url` - url to access s3, this is not required, but is useful when running on localstack.
+* `endpoint_url` - url to access s3, this is not required, but is useful when running on local AWS emulators like MiniStack or LocalStack.
 * `region_name` - region name, defaults to `us-east-1`.
 * `aws_access_key_id` - aws access key id (Optional).
 * `aws_secret_access_key` - aws secret access key (Optional).
@@ -291,7 +361,8 @@ To setup the project, you can run the following commands:
 ```bash
 make install
 ```
-This will install the required dependencies for the project just using pip.
+This installs the required dependencies for local development.
+The Makefile uses `uv` under the hood.
 
 ## Linting
 We use pre-commit to do linting locally, this will be included in the dev dependencies.
@@ -310,5 +381,10 @@ To run tests, you can use the following command:
 ```bash
 make test
 ```
-In the background this will setup localstack to replicate the AWS services, and run the tests.
+In the background this will setup MiniStack (free open-source AWS emulator) to replicate the AWS services, and run the tests.
 It will also generate the coverage report and the badge.
+
+You can also use Docker Compose to run MiniStack separately:
+```bash
+docker-compose up -d
+```
