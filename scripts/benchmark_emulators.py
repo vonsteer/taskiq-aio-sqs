@@ -6,6 +6,7 @@ import dataclasses
 import json
 import logging
 import math
+import os
 import subprocess
 import time
 import urllib.error
@@ -39,6 +40,7 @@ class EmulatorConfig:
     container_name: str
     health_path: str
     env: dict[str, str]
+    passthrough_env_keys: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass
@@ -81,10 +83,12 @@ EMULATORS: tuple[EmulatorConfig, ...] = (
         health_path="/_localstack/health",
         env={
             "SERVICES": "sqs",
+            "ACTIVATE_PRO": "0",
             "DEFAULT_REGION": AWS_REGION,
             "AWS_DEFAULT_REGION": AWS_REGION,
             "DEBUG": "0",
         },
+        passthrough_env_keys=("LOCALSTACK_AUTH_TOKEN", "ACTIVATE_PRO"),
     ),
     EmulatorConfig(
         name="floci",
@@ -141,6 +145,74 @@ def _wait_for_health(health_url: str, timeout_seconds: float) -> None:
     raise TimeoutError(f"Health check timed out for {health_url}: {last_error}")
 
 
+def _container_state(container_name: str) -> str:
+    """Return the container runtime state (running/exited/etc)."""
+    proc = _run(
+        [
+            "docker",
+            "inspect",
+            "--format",
+            "{{.State.Status}}",
+            container_name,
+        ],
+        check=False,
+    )
+    if proc.returncode != 0:
+        return "missing"
+    return proc.stdout.strip() or "unknown"
+
+
+def _container_logs_tail(container_name: str, lines: int = 80) -> str:
+    """Return the tail of container logs for diagnostics."""
+    proc = _run(
+        ["docker", "logs", "--tail", str(lines), container_name],
+        check=False,
+    )
+    logs = (proc.stdout + "\n" + proc.stderr).strip()
+    return logs or "<no logs available>"
+
+
+def _wait_for_health_or_fail_container(
+    config: EmulatorConfig,
+    timeout_seconds: float,
+) -> None:
+    """Wait for health endpoint and fail fast if container exits."""
+    health_url = f"{ENDPOINT_URL}{config.health_path}"
+    deadline = time.monotonic() + timeout_seconds
+    last_error = "unknown error"
+
+    while time.monotonic() < deadline:
+        state = _container_state(config.container_name)
+        if state in {"exited", "dead"}:
+            logs = _container_logs_tail(config.container_name)
+            raise RuntimeError(
+                "Container exited before becoming healthy "
+                f"(backend={config.name}, state={state}). Logs:\n{logs}"
+            )
+
+        try:
+            with urllib.request.urlopen(health_url, timeout=2.0) as response:  # noqa: S310
+                if HTTP_OK_MIN <= response.status < HTTP_OK_MAX:
+                    return
+                last_error = f"HTTP {response.status}"
+        except urllib.error.URLError as exc:
+            last_error = str(exc)
+        except TimeoutError:
+            last_error = "timeout"
+        except Exception as exc:
+            last_error = str(exc)
+
+        time.sleep(0.5)
+
+    logs = _container_logs_tail(config.container_name)
+    raise TimeoutError(
+        "Health check timed out for "
+        f"{health_url} (backend={config.name}): {last_error}. "
+        f"Container state={_container_state(config.container_name)}. "
+        f"Logs tail:\n{logs}"
+    )
+
+
 def _parse_mem_to_mib(mem_value: str) -> float:
     match = mem_value.strip().lower()
     if match.endswith("gib"):
@@ -184,11 +256,15 @@ def _start_emulator(config: EmulatorConfig, timeout_seconds: float) -> float:
     ]
     for key, value in config.env.items():
         cmd.extend(["-e", f"{key}={value}"])
+    for env_key in config.passthrough_env_keys:
+        env_value = os.getenv(env_key)
+        if env_value:
+            cmd.extend(["-e", f"{env_key}={env_value}"])
     cmd.append(config.image)
 
     start = time.perf_counter()
     _run(cmd)
-    _wait_for_health(f"{ENDPOINT_URL}{config.health_path}", timeout_seconds)
+    _wait_for_health_or_fail_container(config, timeout_seconds)
     return (time.perf_counter() - start) * 1000.0
 
 
@@ -418,31 +494,51 @@ def _render_report(
 async def _benchmark_emulators(
     iterations: int,
     startup_timeout: float,
+    startup_retries: int,
 ) -> list[BenchmarkResult]:
     results: list[BenchmarkResult] = []
 
     for config in EMULATORS:
         result = BenchmarkResult(backend=config.name)
-        try:
-            result.startup_ms = _start_emulator(config, timeout_seconds=startup_timeout)
-            result.mem_ready_mib = _container_memory_mib(config.container_name)
-            metrics = await _run_latency_benchmark(iterations=iterations)
-            result.kick_mean_ms = metrics["kick_mean_ms"]
-            result.kick_p50_ms = metrics["kick_p50_ms"]
-            result.kick_p95_ms = metrics["kick_p95_ms"]
-            result.roundtrip_mean_ms = metrics["roundtrip_mean_ms"]
-            result.roundtrip_p50_ms = metrics["roundtrip_p50_ms"]
-            result.roundtrip_p95_ms = metrics["roundtrip_p95_ms"]
-            result.mem_post_mib = _container_memory_mib(config.container_name)
-            result.status = "ok"
-        except Exception as exc:
-            result.status = "failed"
-            error_text = str(exc).replace("\n", " ").strip()
+        max_attempts = max(1, startup_retries + 1)
+        last_exception: Exception | None = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                result.startup_ms = _start_emulator(
+                    config,
+                    timeout_seconds=startup_timeout,
+                )
+                result.mem_ready_mib = _container_memory_mib(config.container_name)
+                metrics = await _run_latency_benchmark(iterations=iterations)
+                result.kick_mean_ms = metrics["kick_mean_ms"]
+                result.kick_p50_ms = metrics["kick_p50_ms"]
+                result.kick_p95_ms = metrics["kick_p95_ms"]
+                result.roundtrip_mean_ms = metrics["roundtrip_mean_ms"]
+                result.roundtrip_p50_ms = metrics["roundtrip_p50_ms"]
+                result.roundtrip_p95_ms = metrics["roundtrip_p95_ms"]
+                result.mem_post_mib = _container_memory_mib(config.container_name)
+                result.status = "ok"
+                break
+            except Exception as exc:
+                last_exception = exc
+                result.status = "failed"
+                if attempt < max_attempts:
+                    logger.warning(
+                        "Retrying backend '%s' startup (%s/%s) after failure: %s",
+                        config.name,
+                        attempt,
+                        max_attempts,
+                        exc,
+                    )
+            finally:
+                _stop_emulator(config)
+
+        if result.status != "ok" and last_exception is not None:
+            error_text = str(last_exception).replace("\n", " ").strip()
             if not error_text:
-                error_text = repr(exc)
+                error_text = repr(last_exception)
             result.error = error_text
-        finally:
-            _stop_emulator(config)
 
         results.append(result)
 
@@ -460,6 +556,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=180.0,
         help="Startup health check timeout in seconds per emulator.",
+    )
+    parser.add_argument(
+        "--startup-retries",
+        type=int,
+        default=1,
+        help="Number of retry attempts for each backend startup.",
     )
     parser.add_argument(
         "--output",
@@ -486,6 +588,7 @@ def main() -> None:
         _benchmark_emulators(
             iterations=args.iterations,
             startup_timeout=args.startup_timeout,
+            startup_retries=args.startup_retries,
         )
     )
 

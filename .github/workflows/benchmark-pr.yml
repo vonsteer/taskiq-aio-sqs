@@ -22,6 +22,8 @@ jobs:
     env:
       BENCHMARK_ITERATIONS: "40"
       BENCHMARK_STARTUP_TIMEOUT: "240"
+      BENCHMARK_STARTUP_RETRIES: "2"
+      LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +38,7 @@ jobs:
           uv run python scripts/benchmark_emulators.py \
             --iterations "${BENCHMARK_ITERATIONS}" \
             --startup-timeout "${BENCHMARK_STARTUP_TIMEOUT}" \
+            --startup-retries "${BENCHMARK_STARTUP_RETRIES}" \
             --output benchmark_results.md \
             --json-output benchmark_results.json
 
