@@ -83,6 +83,13 @@ jobs:
             echo "|---|---:|---:|---:|---|"
           } > backend_test_results.md
 
+          {
+            echo "## Failure Breakdown"
+            echo
+            echo "Only failing backends are listed below."
+            echo
+          } > backend_test_failures.md
+
           failures=0
 
           for backend in ministack localstack floci; do
@@ -105,7 +112,7 @@ jobs:
             elif [ "$backend" = "localstack" ]; then
               image="localstack/localstack:latest"
               health_path="/_localstack/health"
-              env_args+=("-e" "SERVICES=sqs")
+              env_args+=("-e" "SERVICES=sqs,s3")
               env_args+=("-e" "ACTIVATE_PRO=0")
               env_args+=("-e" "DEFAULT_REGION=us-east-1")
               env_args+=("-e" "AWS_DEFAULT_REGION=us-east-1")
@@ -149,6 +156,20 @@ jobs:
                 else
                   notes="pytest failed; see ${log_file}"
                 fi
+
+                fail_lines=$(grep -E '^(FAILED|ERROR) ' "$log_file" || true)
+                {
+                  echo "### ${backend}"
+                  echo
+                  if [ -n "$fail_lines" ]; then
+                    echo '```text'
+                    echo "$fail_lines"
+                    echo '```'
+                  else
+                    echo "No explicit FAILED/ERROR lines found in log; see ${log_file}."
+                  fi
+                  echo
+                } >> backend_test_failures.md
               fi
             else
               startup_status="fail"
@@ -160,6 +181,13 @@ jobs:
                 docker logs --tail 200 "$container" 2>&1 || true
               } > "$log_file"
               notes="startup failed; see ${log_file}"
+
+              {
+                echo "### ${backend}"
+                echo
+                echo "Startup failed before running pytest. See ${log_file}."
+                echo
+              } >> backend_test_failures.md
             fi
 
             safe_notes=${notes//|/\\|}
@@ -176,6 +204,13 @@ jobs:
               echo "Overall: ${failures} backend(s) failed startup or tests."
             fi
           } >> backend_test_results.md
+
+          if [ "$failures" -gt 0 ]; then
+            {
+              echo
+              cat backend_test_failures.md
+            } >> backend_test_results.md
+          fi
 
       - name: Add reports to workflow summary
         if: always()
@@ -199,6 +234,7 @@ jobs:
             benchmark_results.md
             benchmark_results.json
             backend_test_results.md
+            backend_test_failures.md
             backend-test-*.log
 
       - name: Post or update PR comment
