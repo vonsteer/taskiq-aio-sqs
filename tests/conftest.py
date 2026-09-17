@@ -168,6 +168,45 @@ async def sqs_broker_with_metadata(
 
 
 @pytest.fixture(scope="function")
+async def sqs_broker_with_heartbeat(
+    aws_credentials: AWSCredentials,
+    sqs_queue: str,
+) -> AsyncGenerator[SQSBroker, Any]:
+    broker = SQSBroker(
+        sqs_queue_name=_queue_name_from_url(sqs_queue),
+        visibility_timeout=2,
+        enable_heartbeat=True,
+        heartbeat_interval=1,
+        **aws_credentials,
+    )
+    await broker.startup()
+    assert broker._sqs_client
+    assert broker._sqs_queue_url
+    yield broker
+    await broker.shutdown()
+
+
+@pytest.fixture(scope="function")
+async def sqs_broker_with_capped_heartbeat(
+    aws_credentials: AWSCredentials,
+    sqs_queue: str,
+) -> AsyncGenerator[SQSBroker, Any]:
+    broker = SQSBroker(
+        sqs_queue_name=_queue_name_from_url(sqs_queue),
+        visibility_timeout=2,
+        enable_heartbeat=True,
+        heartbeat_interval=1,
+        heartbeat_max_extensions=1,
+        **aws_credentials,
+    )
+    await broker.startup()
+    assert broker._sqs_client
+    assert broker._sqs_queue_url
+    yield broker
+    await broker.shutdown()
+
+
+@pytest.fixture(scope="function")
 async def sqs_broker_fifo(
     aws_credentials: AWSCredentials,
     fifo_sqs_queue: str,

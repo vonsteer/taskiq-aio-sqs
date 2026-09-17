@@ -35,6 +35,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from types_aiobotocore_s3.client import S3Client
     from types_aiobotocore_sqs.client import SQSClient
     from types_aiobotocore_sqs.type_defs import (
+        GetQueueAttributesResultTypeDef,
         GetQueueUrlResultTypeDef,
         SendMessageBatchRequestEntryTypeDef,
         SendMessageRequestTypeDef,
@@ -60,6 +61,7 @@ MessageGroupId = TypeAdapter(
 _QUEUE_LABEL: Final[str] = "queue"
 _LISTEN_STREAM_BUFFER: Final[int] = 100
 _MAX_WAIT_TIME_SECONDS: Final[int] = 20
+_DEFAULT_HEARTBEAT_MAX_EXTENSIONS: Final[int] = 100
 
 
 def _parse_receive_count(attributes: object) -> int | None:
@@ -99,6 +101,9 @@ class SQSBroker(AsyncBroker):
         batch_timeout: float = 1.0,
         skip_batch_tasks: list[str] | None = None,
         expose_message_metadata: bool = False,
+        enable_heartbeat: bool = False,
+        heartbeat_interval: float | None = None,
+        heartbeat_max_extensions: int = _DEFAULT_HEARTBEAT_MAX_EXTENSIONS,
     ) -> None:
         """Initialize the SQS broker.
 
@@ -128,6 +133,22 @@ class SQSBroker(AsyncBroker):
         (receipt handle, queue URL, message id, approximate receive count) to task
         code as TaskiqMessage.labels. See taskiq_aio_sqs.message_metadata
         for details. Defaults to False.
+        :param enable_heartbeat: Whether to periodically extend a message's
+        visibility timeout in the background while it is being processed, to
+        prevent it from becoming visible to other consumers (and being
+        redelivered/reprocessed) before a long-running task finishes. If no
+        explicit visibility_timeout is set (broker- or queue-level), it is
+        fetched from SQS via GetQueueAttributes once at startup(). Defaults to
+        False.
+        :param heartbeat_interval: How often, in seconds, to extend the
+        visibility timeout while enable_heartbeat is True. If None, defaults to
+        half of the relevant queue's visibility_timeout (explicit or fetched
+        from SQS).
+        :param heartbeat_max_extensions: Safety cap on how many times a single
+        message's visibility timeout may be extended, in case the message is
+        never acked (e.g. a malformed message, or an unregistered task, which
+        taskiq's Receiver silently drops without acking). Once reached, the
+        message is allowed to become visible again.
 
 
         :raises BrokerInputConfigError: If the configuration is invalid.
@@ -148,6 +169,11 @@ class SQSBroker(AsyncBroker):
 
         self._expose_message_metadata = expose_message_metadata
         self.formatter = self._apply_message_metadata_wrapping(self.formatter)
+        self._configure_heartbeat(
+            enable_heartbeat,
+            heartbeat_interval,
+            heartbeat_max_extensions,
+        )
 
         try:
             self.max_number_of_messages = MaxNumberOfMessages.validate_python(
@@ -200,6 +226,21 @@ class SQSBroker(AsyncBroker):
         self.use_task_id_for_deduplication = use_task_id_for_deduplication
         self.s3_extended_bucket_name = s3_extended_bucket_name
 
+        self._configure_batching(
+            enable_batching,
+            batch_size,
+            batch_timeout,
+            skip_batch_tasks,
+        )
+
+    def _configure_batching(
+        self,
+        enable_batching: bool,
+        batch_size: int,
+        batch_timeout: float,
+        skip_batch_tasks: list[str] | None,
+    ) -> None:
+        """Validate and store message-batching configuration."""
         self._enable_batching = enable_batching
 
         try:
@@ -272,6 +313,133 @@ class SQSBroker(AsyncBroker):
         if self._expose_message_metadata:
             return MetadataUnwrappingFormatter(formatter)
         return formatter
+
+    def _configure_heartbeat(
+        self,
+        enable_heartbeat: bool,
+        heartbeat_interval: float | None,
+        heartbeat_max_extensions: int,
+    ) -> None:
+        """Validate and store heartbeat configuration."""
+        if heartbeat_interval is not None and heartbeat_interval <= 0:
+            raise exceptions.BrokerConfigError(
+                error=(
+                    f"'heartbeat_interval' must be greater than 0, "
+                    f"got {heartbeat_interval}"
+                ),
+            )
+        if heartbeat_max_extensions < 1:
+            raise exceptions.BrokerConfigError(
+                error=(
+                    f"'heartbeat_max_extensions' must be at least 1, "
+                    f"got {heartbeat_max_extensions}"
+                ),
+            )
+
+        self._enable_heartbeat = enable_heartbeat
+        self._heartbeat_interval = heartbeat_interval
+        self._heartbeat_max_extensions = heartbeat_max_extensions
+        self._heartbeat_tasks: set[asyncio.Task[None]] = set()
+        self._resolved_visibility_timeouts: dict[str, int] = {}
+
+    async def _resolve_heartbeat_visibility_timeouts(self) -> None:
+        """Fetch VisibilityTimeout from SQS for queues that don't set it explicitly.
+
+        Only relevant when heartbeating is enabled: heartbeating extends
+        ``VisibilityTimeout`` on a fixed cadence, so the broker needs to know
+        the value even if the caller never configured one explicitly.
+        """
+        if not self._enable_heartbeat:
+            return
+
+        for queue in self._queues.values():
+            if queue.visibility_timeout is not None:
+                continue
+
+            queue_url = self._queue_urls[queue.name]
+            with self.handle_exceptions(queue_name=queue.name):
+                attributes: GetQueueAttributesResultTypeDef = (
+                    await self._sqs_client.get_queue_attributes(
+                        QueueUrl=queue_url,
+                        AttributeNames=["VisibilityTimeout"],
+                    )
+                )
+            visibility_timeout = int(attributes["Attributes"]["VisibilityTimeout"])
+            self._resolved_visibility_timeouts[queue.name] = visibility_timeout
+            logger.info(
+                "Resolved queue '%s' VisibilityTimeout for heartbeating: %s",
+                queue.name,
+                visibility_timeout,
+            )
+
+    def _visibility_timeout_for(self, queue: SQSQueue) -> int:
+        """Return the visibility timeout to use for heartbeating this queue.
+
+        Guaranteed to be resolved by the time a message is being processed:
+        either set explicitly on the queue, or fetched from SQS at startup by
+        ``_resolve_heartbeat_visibility_timeouts``.
+        """
+        if queue.visibility_timeout is not None:
+            return queue.visibility_timeout
+        return self._resolved_visibility_timeouts[queue.name]
+
+    def _start_heartbeat(
+        self,
+        queue: SQSQueue,
+        queue_url: str,
+        receipt_handle: str,
+    ) -> asyncio.Task[None] | None:
+        """Start a background visibility-timeout heartbeat, if enabled."""
+        if not self._enable_heartbeat:
+            return None
+
+        task = asyncio.create_task(
+            self._heartbeat_loop(queue, queue_url, receipt_handle),
+        )
+        self._heartbeat_tasks.add(task)
+        task.add_done_callback(self._heartbeat_tasks.discard)
+        return task
+
+    async def _heartbeat_loop(
+        self,
+        queue: SQSQueue,
+        queue_url: str,
+        receipt_handle: str,
+    ) -> None:
+        """Periodically extend a message's visibility timeout until acked.
+
+        Stops after ``heartbeat_max_extensions`` extensions, as a safety net
+        against leaking this task forever if the message is never acked (e.g.
+        because taskiq-core's ``Receiver.callback()`` discarded it, a
+        malformed message or an unregistered task name, without acking).
+        """
+        visibility_timeout = self._visibility_timeout_for(queue)
+        interval = self._heartbeat_interval or max(1.0, visibility_timeout / 2)
+
+        for _ in range(self._heartbeat_max_extensions):
+            await asyncio.sleep(interval)
+            try:
+                await self._sqs_client.change_message_visibility(
+                    QueueUrl=queue_url,
+                    ReceiptHandle=receipt_handle,
+                    VisibilityTimeout=visibility_timeout,
+                )
+            except ClientError as exc:
+                error_code = exc.response.get("Error", {}).get("Code")
+                if error_code != "ReceiptHandleIsInvalid":
+                    logger.warning(
+                        "Failed to extend visibility timeout for queue %s: %s",
+                        queue.name,
+                        exc,
+                    )
+                return
+        logger.warning(
+            "Heartbeat for queue %s reached heartbeat_max_extensions (%s); no "
+            "longer extending the visibility timeout. The message may become "
+            "visible to other consumers again if the task has not finished.",
+            queue.name,
+            self._heartbeat_max_extensions,
+        )
 
     @contextlib.contextmanager
     def handle_exceptions(
@@ -364,6 +532,8 @@ class SQSBroker(AsyncBroker):
 
         self._sqs_queue_url = self._queue_urls.get(self._default_queue.name)
 
+        await self._resolve_heartbeat_visibility_timeouts()
+
         if self._enable_batching:
             self._batch_buffers = {
                 queue_name: asyncio.Queue() for queue_name in self._queues
@@ -389,6 +559,14 @@ class SQSBroker(AsyncBroker):
         self._batch_buffers = {}
         self._batch_queue = None
         self._batch_worker_task = None
+
+        heartbeat_tasks = list(self._heartbeat_tasks)
+        for heartbeat_task in heartbeat_tasks:
+            heartbeat_task.cancel()
+        for heartbeat_task in heartbeat_tasks:
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat_task
+        self._heartbeat_tasks.clear()
 
         await self._close_client()
         await super().shutdown()
@@ -803,6 +981,7 @@ class SQSBroker(AsyncBroker):
         *,
         message_id: str | None = None,
         approximate_receive_count: int | None = None,
+        heartbeat_task: asyncio.Task[None] | None = None,
     ) -> Callable[[], Awaitable[None]]:
         """
         This method is used to build an ack for the message.
@@ -812,9 +991,16 @@ class SQSBroker(AsyncBroker):
         :param message_id: the SQS ``MessageId`` for this delivery, if known.
         :param approximate_receive_count: the SQS ``ApproximateReceiveCount``
             system attribute for this delivery, if known.
+        :param heartbeat_task: background visibility-timeout heartbeat task for
+            this message, if heartbeating is enabled. Cancelled when ``ack()``
+            is called.
         """
 
         async def ack() -> None:
+            if heartbeat_task is not None and not heartbeat_task.done():
+                heartbeat_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await heartbeat_task
             with self.handle_exceptions():
                 await self._sqs_client.delete_message(
                     QueueUrl=queue_url,
@@ -889,7 +1075,7 @@ class SQSBroker(AsyncBroker):
                     break
 
                 for message in messages:
-                    ackable = await self._to_ackable_message(message, queue_url)
+                    ackable = await self._to_ackable_message(message, queue, queue_url)
                     if ackable is None:
                         continue
                     await send_stream.send(ackable)
@@ -897,6 +1083,7 @@ class SQSBroker(AsyncBroker):
     async def _to_ackable_message(
         self,
         message: object,
+        queue: SQSQueue,
         queue_url: str,
     ) -> AckableMessage | None:
         """
@@ -905,6 +1092,7 @@ class SQSBroker(AsyncBroker):
         Returns None if the message is malformed and should be skipped.
 
         :param message: raw message dict as returned by ``receive_message``.
+        :param queue: queue configuration the message was received from.
         :param queue_url: queue url the message was received from.
         """
         if not isinstance(message, dict):
@@ -922,12 +1110,6 @@ class SQSBroker(AsyncBroker):
 
         message_id = message.get("MessageId")
         approximate_receive_count = _parse_receive_count(message.get("Attributes"))
-        ack_fnx = self.build_ack_fnx(
-            queue_url,
-            receipt_handle,
-            message_id=message_id if isinstance(message_id, str) else None,
-            approximate_receive_count=approximate_receive_count,
-        )
 
         if attributes.get("s3_extended_message"):
             loaded_data = json.loads(body)
@@ -939,6 +1121,15 @@ class SQSBroker(AsyncBroker):
                 payload = await s3_body.read()
         else:
             payload = body.encode("utf-8")
+
+        heartbeat_task = self._start_heartbeat(queue, queue_url, receipt_handle)
+        ack_fnx = self.build_ack_fnx(
+            queue_url,
+            receipt_handle,
+            message_id=message_id if isinstance(message_id, str) else None,
+            approximate_receive_count=approximate_receive_count,
+            heartbeat_task=heartbeat_task,
+        )
 
         if self._expose_message_metadata:
             payload = encode_envelope(
