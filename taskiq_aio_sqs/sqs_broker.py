@@ -5,14 +5,11 @@ import contextlib
 import json
 import logging
 import time
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
 from typing import (
     TYPE_CHECKING,
     Annotated,
-    AsyncGenerator,
-    Awaitable,
-    Callable,
     Final,
-    Generator,
 )
 
 import anyio
@@ -26,9 +23,15 @@ from taskiq.acks import AckableMessage
 from taskiq.message import BrokerMessage
 
 from taskiq_aio_sqs import constants, exceptions
+from taskiq_aio_sqs.message_metadata import (
+    MetadataUnwrappingFormatter,
+    SQSMessageMetadata,
+    encode_envelope,
+)
 from taskiq_aio_sqs.queue import SQSQueue
 
 if TYPE_CHECKING:  # pragma: no cover
+    from taskiq.abc.formatter import TaskiqFormatter
     from types_aiobotocore_s3.client import S3Client
     from types_aiobotocore_sqs.client import SQSClient
     from types_aiobotocore_sqs.type_defs import (
@@ -59,6 +62,21 @@ _LISTEN_STREAM_BUFFER: Final[int] = 100
 _MAX_WAIT_TIME_SECONDS: Final[int] = 20
 
 
+def _parse_receive_count(attributes: object) -> int | None:
+    """Extract ``ApproximateReceiveCount`` from a message's system attributes.
+
+    Returns ``None`` if it wasn't requested/present, or isn't a valid integer.
+    """
+    if not isinstance(attributes, dict):
+        return None
+
+    raw_count = attributes.get("ApproximateReceiveCount")
+    if not isinstance(raw_count, str) or not raw_count.isdigit():
+        return None
+
+    return int(raw_count)
+
+
 class SQSBroker(AsyncBroker):
     """AWS SQS TaskIQ broker."""
 
@@ -80,6 +98,7 @@ class SQSBroker(AsyncBroker):
         batch_size: int = 10,
         batch_timeout: float = 1.0,
         skip_batch_tasks: list[str] | None = None,
+        expose_message_metadata: bool = False,
     ) -> None:
         """Initialize the SQS broker.
 
@@ -105,6 +124,10 @@ class SQSBroker(AsyncBroker):
         :param batch_timeout: Maximum time in seconds to wait before sending a
         partial batch.
         :param skip_batch_tasks: List of task names that should bypass batching.
+        :param expose_message_metadata: Whether to surface SQS delivery metadata
+        (receipt handle, queue URL, message id, approximate receive count) to task
+        code as TaskiqMessage.labels. See taskiq_aio_sqs.message_metadata
+        for details. Defaults to False.
 
 
         :raises BrokerInputConfigError: If the configuration is invalid.
@@ -122,6 +145,9 @@ class SQSBroker(AsyncBroker):
         self._is_fair_queue = is_fair_queue
         self._sqs_queue_url: str | None = None
         self._queue_urls: dict[str, str] = {}
+
+        self._expose_message_metadata = expose_message_metadata
+        self.formatter = self._apply_message_metadata_wrapping(self.formatter)
 
         try:
             self.max_number_of_messages = MaxNumberOfMessages.validate_python(
@@ -204,7 +230,7 @@ class SQSBroker(AsyncBroker):
         self._batch_queue: asyncio.Queue[SendMessageRequestTypeDef] | None = None
         self._batch_worker_task: asyncio.Task[None] | None = None
 
-    def with_queues(self, *queues: SQSQueue) -> "SQSBroker":
+    def with_queues(self, *queues: SQSQueue) -> SQSBroker:
         """Register additional queues for this broker."""
         if self._startup_called:
             raise ValueError("Cannot register queues after startup() has been invoked.")
@@ -213,7 +239,7 @@ class SQSBroker(AsyncBroker):
             self._queues[queue.name] = queue
         return self
 
-    def with_default_queue(self, queue: SQSQueue) -> "SQSBroker":
+    def with_default_queue(self, queue: SQSQueue) -> SQSBroker:
         """Set the default queue for unlabeled messages."""
         if self._startup_called:
             raise ValueError(
@@ -228,6 +254,24 @@ class SQSBroker(AsyncBroker):
         self.wait_time_seconds = queue.wait_time_seconds
         self.visibility_timeout = queue.visibility_timeout
         return self
+
+    def with_formatter(self, formatter: TaskiqFormatter) -> SQSBroker:
+        """Set a new formatter for this broker.
+
+        Preserves SQS message-metadata unwrapping (see
+        ``expose_message_metadata``) by re-wrapping ``formatter``, if it was
+        enabled at construction time.
+        """
+        return super().with_formatter(self._apply_message_metadata_wrapping(formatter))
+
+    def _apply_message_metadata_wrapping(
+        self,
+        formatter: TaskiqFormatter,
+    ) -> TaskiqFormatter:
+        """Wrap ``formatter`` for metadata unwrapping, if enabled."""
+        if self._expose_message_metadata:
+            return MetadataUnwrappingFormatter(formatter)
+        return formatter
 
     @contextlib.contextmanager
     def handle_exceptions(
@@ -249,7 +293,7 @@ class SQSBroker(AsyncBroker):
             else:
                 raise exceptions.SQSBrokerError(error=code) from e  # pragma: no cover
 
-    async def _get_s3_client(self) -> "S3Client":
+    async def _get_s3_client(self) -> S3Client:
         """
         Retrieves the S3 client, creating it if necessary.
 
@@ -265,7 +309,7 @@ class SQSBroker(AsyncBroker):
         )
         return await self._s3_client_context_creator.__aenter__()
 
-    async def _get_sqs_client(self) -> "SQSClient":
+    async def _get_sqs_client(self) -> SQSClient:
         """
         Retrieves the SQS client, creating it if necessary.
 
@@ -295,7 +339,7 @@ class SQSBroker(AsyncBroker):
             return queue_url
 
         with self.handle_exceptions(queue_name=resolved_queue_name):
-            queue_result: "GetQueueUrlResultTypeDef" = (
+            queue_result: GetQueueUrlResultTypeDef = (
                 await self._sqs_client.get_queue_url(
                     QueueName=resolved_queue_name,
                 )
@@ -417,7 +461,7 @@ class SQSBroker(AsyncBroker):
         message: BrokerMessage,
         queue: SQSQueue | None = None,
         queue_url: str | None = None,
-    ) -> "SendMessageRequestTypeDef":
+    ) -> SendMessageRequestTypeDef:
         """Build the kwargs for the SQS client kick method.
 
         This function can be extended by the end user to
@@ -429,7 +473,7 @@ class SQSBroker(AsyncBroker):
             queue_name=resolved_queue.name,
         )
 
-        kwargs: "SendMessageRequestTypeDef" = {
+        kwargs: SendMessageRequestTypeDef = {
             "QueueUrl": resolved_queue_url,
             "MessageBody": message.message.decode("utf-8"),
         }
@@ -756,12 +800,18 @@ class SQSBroker(AsyncBroker):
         self,
         queue_url: str,
         receipt_handle: str,
+        *,
+        message_id: str | None = None,
+        approximate_receive_count: int | None = None,
     ) -> Callable[[], Awaitable[None]]:
         """
         This method is used to build an ack for the message.
 
         :param queue_url: queue url where the message is located
         :param receipt_handle: message to build ack for.
+        :param message_id: the SQS ``MessageId`` for this delivery, if known.
+        :param approximate_receive_count: the SQS ``ApproximateReceiveCount``
+            system attribute for this delivery, if known.
         """
 
         async def ack() -> None:
@@ -771,6 +821,12 @@ class SQSBroker(AsyncBroker):
                     ReceiptHandle=receipt_handle,
                 )
 
+        ack.metadata = SQSMessageMetadata(  # type: ignore[attr-defined]
+            receipt_handle=receipt_handle,
+            queue_url=queue_url,
+            message_id=message_id,
+            approximate_receive_count=approximate_receive_count,
+        )
         return ack
 
     async def listen(self) -> AsyncGenerator[AckableMessage, None]:
@@ -833,41 +889,64 @@ class SQSBroker(AsyncBroker):
                     break
 
                 for message in messages:
-                    if not isinstance(message, dict):
+                    ackable = await self._to_ackable_message(message, queue_url)
+                    if ackable is None:
                         continue
+                    await send_stream.send(ackable)
 
-                    body = message.get("Body")
-                    receipt_handle = message.get("ReceiptHandle")
-                    raw_attributes = message.get("MessageAttributes", {})
-                    attributes: dict[str, object]
-                    if isinstance(raw_attributes, dict):
-                        attributes = raw_attributes
-                    else:
-                        attributes = {}
+    async def _to_ackable_message(
+        self,
+        message: object,
+        queue_url: str,
+    ) -> AckableMessage | None:
+        """
+        Convert a raw SQS message dict into an AckableMessage.
 
-                    if not isinstance(body, str) or not isinstance(receipt_handle, str):
-                        continue
+        Returns None if the message is malformed and should be skipped.
 
-                    if attributes.get("s3_extended_message"):
-                        loaded_data = json.loads(body)
-                        s3_object = await self._s3_client.get_object(
-                            Bucket=loaded_data["s3_bucket"],
-                            Key=loaded_data["s3_key"],
-                        )
-                        async with s3_object["Body"] as s3_body:
-                            await send_stream.send(
-                                AckableMessage(
-                                    data=await s3_body.read(),
-                                    ack=self.build_ack_fnx(queue_url, receipt_handle),
-                                ),
-                            )
-                    else:
-                        await send_stream.send(
-                            AckableMessage(
-                                data=body.encode("utf-8"),
-                                ack=self.build_ack_fnx(queue_url, receipt_handle),
-                            ),
-                        )
+        :param message: raw message dict as returned by ``receive_message``.
+        :param queue_url: queue url the message was received from.
+        """
+        if not isinstance(message, dict):
+            return None
+
+        body = message.get("Body")
+        receipt_handle = message.get("ReceiptHandle")
+        raw_attributes = message.get("MessageAttributes", {})
+        attributes: dict[str, object] = (
+            raw_attributes if isinstance(raw_attributes, dict) else {}
+        )
+
+        if not isinstance(body, str) or not isinstance(receipt_handle, str):
+            return None
+
+        message_id = message.get("MessageId")
+        approximate_receive_count = _parse_receive_count(message.get("Attributes"))
+        ack_fnx = self.build_ack_fnx(
+            queue_url,
+            receipt_handle,
+            message_id=message_id if isinstance(message_id, str) else None,
+            approximate_receive_count=approximate_receive_count,
+        )
+
+        if attributes.get("s3_extended_message"):
+            loaded_data = json.loads(body)
+            s3_object = await self._s3_client.get_object(
+                Bucket=loaded_data["s3_bucket"],
+                Key=loaded_data["s3_key"],
+            )
+            async with s3_object["Body"] as s3_body:
+                payload = await s3_body.read()
+        else:
+            payload = body.encode("utf-8")
+
+        if self._expose_message_metadata:
+            payload = encode_envelope(
+                ack_fnx.metadata,  # type: ignore[attr-defined]
+                payload,
+            )
+
+        return AckableMessage(data=payload, ack=ack_fnx)
 
     async def _receive_messages(
         self,
@@ -886,6 +965,7 @@ class SQSBroker(AsyncBroker):
                 "QueueUrl": queue_url,
                 "MaxNumberOfMessages": queue.max_number_of_messages,
                 "MessageAttributeNames": ["All"],
+                "AttributeNames": ["ApproximateReceiveCount"],
                 "WaitTimeSeconds": current_wait,
             }
             if queue.visibility_timeout is not None:

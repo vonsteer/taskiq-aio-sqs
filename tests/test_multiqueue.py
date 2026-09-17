@@ -270,7 +270,7 @@ async def test_listen_receives_from_all_queues(
         assert isinstance(item, AckableMessage)
         received.add(item.data.decode("utf-8"))
         assert item.ack is not None
-        await cast(Any, item.ack)()
+        await cast("Any", item.ack)()
         if len(received) == 2:
             break
 
@@ -301,7 +301,7 @@ async def test_listen_single_queue_isolation(
                 async for item in broker.listen():
                     if isinstance(item, AckableMessage):
                         assert item.ack is not None
-                        await cast(Any, item.ack)()
+                        await cast("Any", item.ack)()
                     break
     finally:
         await broker.shutdown()
@@ -319,7 +319,7 @@ async def test_single_queue_broker_behaves_as_before(
         assert isinstance(item, AckableMessage)
         assert item.data == b"single-queue-message"
         assert item.ack is not None
-        await cast(Any, item.ack)()
+        await cast("Any", item.ack)()
         break
 
 
@@ -608,7 +608,7 @@ async def test_listen_single_breaks_when_stop_event_set_after_receive(
     broker._receive_messages = _mock_receive  # type: ignore[method-assign]
     send_stream = _FakeSendStream()
 
-    await broker._listen_single(default_queue, cast(Any, send_stream), stop_event)
+    await broker._listen_single(default_queue, cast("Any", send_stream), stop_event)
 
     assert send_stream.messages == []
 
@@ -638,7 +638,7 @@ async def test_listen_single_uses_empty_attributes_for_non_dict_message_attribut
     with pytest.raises(asyncio.CancelledError):
         await broker._listen_single(
             default_queue,
-            cast(Any, send_stream),
+            cast("Any", send_stream),
             asyncio.Event(),
         )
 
@@ -679,7 +679,7 @@ async def test_listen_single_raises_when_queue_url_missing(
     with pytest.raises(BrokerConfigError):
         await broker._listen_single(
             default_queue,
-            cast(Any, _FakeSendStream()),
+            cast("Any", _FakeSendStream()),
             asyncio.Event(),
         )
 
@@ -706,7 +706,7 @@ async def test_listen_single_skips_invalid_messages_and_sends_plain_message(
     with pytest.raises(asyncio.CancelledError):
         await broker._listen_single(
             default_queue,
-            cast(Any, send_stream),
+            cast("Any", send_stream),
             asyncio.Event(),
         )
 
@@ -732,8 +732,8 @@ async def test_listen_single_loads_s3_extended_message(default_queue: SQSQueue) 
             asyncio.CancelledError(),
         ],
     )
-    cast(Any, broker)._s3_client = cast(
-        S3Client,
+    cast("Any", broker)._s3_client = cast(
+        "S3Client",
         SimpleNamespace(get_object=AsyncMock(return_value={"Body": _FakeS3Body()})),
     )
 
@@ -742,7 +742,7 @@ async def test_listen_single_loads_s3_extended_message(default_queue: SQSQueue) 
     with pytest.raises(asyncio.CancelledError):
         await broker._listen_single(
             default_queue,
-            cast(Any, send_stream),
+            cast("Any", send_stream),
             asyncio.Event(),
         )
 
@@ -759,7 +759,7 @@ async def test_receive_messages_includes_visibility_timeout() -> None:
     )
     broker = SQSBroker(sqs_queue_name=queue.name)
     receive_message_mock = AsyncMock(return_value={})
-    cast(Any, broker)._sqs_client = SimpleNamespace(
+    cast("Any", broker)._sqs_client = SimpleNamespace(
         receive_message=receive_message_mock
     )
 
@@ -770,6 +770,7 @@ async def test_receive_messages_includes_visibility_timeout() -> None:
         QueueUrl="queue-url",
         MaxNumberOfMessages=1,
         MessageAttributeNames=["All"],
+        AttributeNames=["ApproximateReceiveCount"],
         WaitTimeSeconds=0,
         VisibilityTimeout=7,
     )

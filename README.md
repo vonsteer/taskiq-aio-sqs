@@ -19,6 +19,7 @@ Inspired by the [taskiq-sqs](https://github.com/ApeWorX/taskiq-sqs) broker.
 - **Delayed Tasks**: Schedule tasks with configurable delays (0-900 seconds) ([see Delayed Tasks](#delayed-tasks))
 - **FIFO Queue Support**: Message ordering and deduplication with custom MessageGroupId control per task/message ([see FIFO Queues and Custom Message Groups](#fifo-queues-and-custom-message-groups))
 - **Fair Queues**: Distribute tasks evenly across message groups for balanced processing ([see Configuration](#configuration))
+- **Message Metadata**: Optionally surface the SQS receipt handle, message id, and approximate receive count to task code, useful for debugging duplicate/redelivered messages ([see Message Metadata](#message-metadata))
 
 ## Installation
 
@@ -303,6 +304,40 @@ async def main():
 
 **Note:** Delay functionality is not supported with FIFO queues due to AWS SQS limitations.
 
+### Message Metadata:
+
+SQS gives you the receipt handle, message id, and approximate receive count directly on every `receive_message` response. The catch is that taskiq's core `Receiver` only ever hands your task the raw message bytes, it has no concept of broker-specific delivery metadata, so out of the box there's no way for a task to know which physical SQS delivery it came from. That makes it impossible to distinguish "SQS redelivered this message" (a growing `ApproximateReceiveCount`) from "the publisher produced a duplicate message", which matters a lot when debugging duplicate task execution.
+
+Set `expose_message_metadata=True` on the broker to opt into surfacing this metadata as labels on `TaskiqMessage`, readable from `Context` in your task:
+
+```python
+from taskiq import Context, TaskiqDepends
+from taskiq_aio_sqs import (
+    SQSBroker,
+    SQS_RECEIPT_HANDLE_LABEL,
+    SQS_APPROXIMATE_RECEIVE_COUNT_LABEL,
+)
+
+broker = SQSBroker(
+    sqs_queue_name="my-queue",
+    expose_message_metadata=True,
+)
+
+
+@broker.task()
+async def my_task(context: Context = TaskiqDepends()) -> None:
+    receipt_handle = context.message.labels.get(SQS_RECEIPT_HANDLE_LABEL)
+    receive_count = context.message.labels.get(SQS_APPROXIMATE_RECEIVE_COUNT_LABEL)
+    # e.g. log both alongside your task_id to tell redeliveries apart
+    # from publisher-side duplicates.
+```
+
+Available labels: `SQS_RECEIPT_HANDLE_LABEL`, `SQS_QUEUE_URL_LABEL`, `SQS_MESSAGE_ID_LABEL`, `SQS_APPROXIMATE_RECEIVE_COUNT_LABEL` (all string-valued; see `taskiq_aio_sqs.message_metadata` for the underlying `SQSMessageMetadata` dataclass).
+
+This is implemented by wrapping the message body, in-memory, in a small JSON envelope between receiving it from SQS and handing it off to taskiq's receiver, it never changes what's actually stored in SQS, so it's safe to enable/disable at any time.
+
+If you consume from `broker.listen()` directly (bypassing taskiq's `Receiver`), this metadata is always available on `message.ack.metadata` as an `SQSMessageMetadata` instance, regardless of the `expose_message_metadata` flag.
+
 ## Configuration:
 
 SQS Broker parameters:
@@ -326,6 +361,7 @@ SQS Broker parameters:
 * `task_id_generator` - custom task_id generator (Optional).
 * `result_backend` - custom result backend (Optional).
 * `is_fair_queue` - : Whether the queue is a fair queue, if True, it will use the `task_name` as the MessageGroupId for all messages.
+* `expose_message_metadata` - surface SQS delivery metadata (receipt handle, queue URL, message id, approximate receive count) to task code as `TaskiqMessage` labels, defaults to False. See [Message Metadata](#message-metadata).
 
 `SQSQueue` parameters (for multi-queue configuration):
 * `name` - queue name.
