@@ -20,6 +20,7 @@ Inspired by the [taskiq-sqs](https://github.com/ApeWorX/taskiq-sqs) broker.
 - **FIFO Queue Support**: Message ordering and deduplication with custom MessageGroupId control per task/message ([see FIFO Queues and Custom Message Groups](#fifo-queues-and-custom-message-groups))
 - **Fair Queues**: Distribute tasks evenly across message groups for balanced processing ([see Configuration](#configuration))
 - **Message Metadata**: Optionally surface the SQS receipt handle, message id, and approximate receive count to task code, useful for debugging duplicate/redelivered messages ([see Message Metadata](#message-metadata))
+- **Heartbeat**: Optionally keep long-running tasks' messages invisible by periodically extending their visibility timeout in the background, preventing premature redelivery/duplicate processing ([see Heartbeat](#heartbeat))
 
 ## Installation
 
@@ -338,6 +339,25 @@ This is implemented by wrapping the message body, in-memory, in a small JSON env
 
 If you consume from `broker.listen()` directly (bypassing taskiq's `Receiver`), this metadata is always available on `message.ack.metadata` as an `SQSMessageMetadata` instance, regardless of the `expose_message_metadata` flag.
 
+### Heartbeat:
+
+SQS's `VisibilityTimeout` hides a message from other consumers for a fixed window after it's received. If a task takes longer to run than that window, SQS assumes the original consumer died and redelivers the message, which with taskiq, means another worker (or the same one) picks it up and runs the task again, potentially publishing duplicate side effects (e.g. duplicate webhooks). taskiq-core's `Receiver` has no concept of "still working on it"; it only tells the broker about completion, via `ack()`, once the task and result backend are done. There's no built-in signal to periodically tell SQS "still alive" for a task that's still running.
+
+Set `enable_heartbeat=True` to have the broker do this for you: while a message is being processed, a background task periodically calls `ChangeMessageVisibility` to push out the message's invisibility window, and is cancelled as soon as the message is acked.
+
+```python
+broker = SQSBroker(
+    sqs_queue_name="my-queue",
+    enable_heartbeat=True,
+    heartbeat_interval=15,
+)
+```
+
+Notes:
+- `visibility_timeout` doesn't need to be set explicitly: if it isn't (on the broker or on the relevant `SQSQueue`, for multi-queue configurations), the broker fetches it from SQS via `GetQueueAttributes` once at `startup()` and caches it for heartbeating. Setting it explicitly avoids that extra startup call.
+- `heartbeat_interval` controls how often the visibility timeout is extended, in seconds. Defaults to half of the queue's `visibility_timeout` (explicit or fetched) if not set.
+- `heartbeat_max_extensions` (default 100) caps how many times a single message's visibility timeout can be extended, as a safety net in case a message is never acked (e.g. a malformed message, an unregistered task name, or a `pre_execute` middleware exception), without this cap such a message would never become visible again for reprocessing or moving to a dead-letter queue.
+
 ## Configuration:
 
 SQS Broker parameters:
@@ -362,6 +382,9 @@ SQS Broker parameters:
 * `result_backend` - custom result backend (Optional).
 * `is_fair_queue` - : Whether the queue is a fair queue, if True, it will use the `task_name` as the MessageGroupId for all messages.
 * `expose_message_metadata` - surface SQS delivery metadata (receipt handle, queue URL, message id, approximate receive count) to task code as `TaskiqMessage` labels, defaults to False. See [Message Metadata](#message-metadata).
+* `enable_heartbeat` - periodically extend a message's visibility timeout in the background while it's being processed, to prevent premature redelivery for long-running tasks. If `visibility_timeout` isn't set explicitly, it's fetched from SQS at startup. Defaults to False. See [Heartbeat](#heartbeat).
+* `heartbeat_interval` - how often, in seconds, to extend the visibility timeout while `enable_heartbeat` is True. Defaults to half of the relevant queue's `visibility_timeout` (explicit or fetched).
+* `heartbeat_max_extensions` - safety cap on how many times a single message's visibility timeout may be extended, defaults to 100.
 
 `SQSQueue` parameters (for multi-queue configuration):
 * `name` - queue name.
