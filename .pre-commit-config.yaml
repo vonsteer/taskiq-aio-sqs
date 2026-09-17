@@ -16,3 +16,4 @@ repos:
     hooks:
     - id: pyright
       language: system
+      entry: uv run pyright

@@ -1,5 +1,6 @@
 import uuid
-from typing import Any, AsyncGenerator, TypedDict
+from collections.abc import AsyncGenerator
+from typing import Any, TypedDict
 
 import pytest
 from aiobotocore.session import get_session
@@ -137,6 +138,25 @@ async def sqs_broker(
     broker = SQSBroker(
         sqs_queue_name=_queue_name_from_url(sqs_queue),
         s3_extended_bucket_name=EXTENDED_BUCKET,
+        **aws_credentials,
+    )
+    await broker.startup()
+    assert broker._sqs_client
+    assert broker._sqs_queue_url
+    assert broker._s3_client
+    yield broker
+    await broker.shutdown()
+
+
+@pytest.fixture(scope="function")
+async def sqs_broker_with_metadata(
+    aws_credentials: AWSCredentials,
+    sqs_queue: str,
+) -> AsyncGenerator[SQSBroker, Any]:
+    broker = SQSBroker(
+        sqs_queue_name=_queue_name_from_url(sqs_queue),
+        s3_extended_bucket_name=EXTENDED_BUCKET,
+        expose_message_metadata=True,
         **aws_credentials,
     )
     await broker.startup()
