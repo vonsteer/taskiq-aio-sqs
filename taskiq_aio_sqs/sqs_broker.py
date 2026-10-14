@@ -85,6 +85,7 @@ class SQSBroker(AsyncBroker):
     def __init__(
         self,
         sqs_queue_name: str,
+        *,
         endpoint_url: str | None = None,
         region_name: str = constants.DEFAULT_REGION,
         aws_access_key_id: str | None = None,

@@ -12,6 +12,7 @@ from taskiq import BrokerMessage
 from taskiq.acks import AckableMessage
 from types_aiobotocore_s3.client import S3Client
 from types_aiobotocore_sqs.client import SQSClient
+from typing_extensions import Self
 
 from taskiq_aio_sqs import SQSBroker, SQSQueue
 from taskiq_aio_sqs.exceptions import (
@@ -649,7 +650,7 @@ class _FakeSendStream:
     def __init__(self) -> None:
         self.messages: list[AckableMessage] = []
 
-    async def __aenter__(self) -> "_FakeSendStream":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, exc_type: object, exc: object, tb: object) -> bool:
@@ -660,7 +661,7 @@ class _FakeSendStream:
 
 
 class _FakeS3Body:
-    async def __aenter__(self) -> "_FakeS3Body":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, exc_type: object, exc: object, tb: object) -> bool:

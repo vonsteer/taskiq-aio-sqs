@@ -26,6 +26,7 @@ class S3Backend(AsyncResultBackend[_ReturnType]):
     def __init__(
         self,
         bucket_name: str,
+        *,
         base_path: str = "",
         endpoint_url: str | None = None,
         region_name: str = constants.DEFAULT_REGION,
