@@ -42,7 +42,9 @@ class EmulatorConfig:
     container_name: str
     health_path: str
     env: dict[str, str]
+    version_cmd: tuple[str, ...]
     passthrough_env_keys: tuple[str, ...] = ()
+    required_env_key: str | None = None
     endpoint_url: str = ENDPOINT_URL
     dockerfile: str | None = None
     ca_path: str | None = None
@@ -53,6 +55,7 @@ class BenchmarkResult:
     """Collected benchmark metrics for one backend run."""
 
     backend: str
+    version: str | None = None
     startup_ms: float | None = None
     mem_ready_mib: float | None = None
     mem_post_mib: float | None = None
@@ -80,6 +83,7 @@ EMULATORS: tuple[EmulatorConfig, ...] = (
             "LOG_LEVEL": "ERROR",
             "PERSIST_STATE": "0",
         },
+        version_cmd=("printenv", "MINISTACK_VERSION"),
     ),
     EmulatorConfig(
         name="localstack",
@@ -88,12 +92,13 @@ EMULATORS: tuple[EmulatorConfig, ...] = (
         health_path="/_localstack/health",
         env={
             "SERVICES": "sqs",
-            "ACTIVATE_PRO": "0",
             "DEFAULT_REGION": AWS_REGION,
             "AWS_DEFAULT_REGION": AWS_REGION,
             "DEBUG": "0",
         },
-        passthrough_env_keys=("LOCALSTACK_AUTH_TOKEN", "ACTIVATE_PRO"),
+        version_cmd=("printenv", "LOCALSTACK_BUILD_VERSION"),
+        passthrough_env_keys=("LOCALSTACK_AUTH_TOKEN",),
+        required_env_key="LOCALSTACK_AUTH_TOKEN",
     ),
     EmulatorConfig(
         name="floci",
@@ -104,6 +109,7 @@ EMULATORS: tuple[EmulatorConfig, ...] = (
             "FLOCI_DEFAULT_REGION": AWS_REGION,
             "FLOCI_STORAGE_MODE": "memory",
         },
+        version_cmd=("printenv", "FLOCI_VERSION"),
     ),
     EmulatorConfig(
         name="aws-emulator",
@@ -111,6 +117,7 @@ EMULATORS: tuple[EmulatorConfig, ...] = (
         container_name="taskiq_bench_aws_emulator",
         health_path="/__admin/health",
         env={},
+        version_cmd=("aws-emulator", "-v"),
         endpoint_url="https://127.0.0.1:4566",
         dockerfile=str(Path(__file__).with_name("aws-emulator.Dockerfile")),
         ca_path="/home/emulator/.aws/emulator/4566/ca.pem",
@@ -268,6 +275,8 @@ def _start_emulator(config: EmulatorConfig, timeout_seconds: float) -> float:
             [
                 "docker",
                 "build",
+                "--pull",
+                "--no-cache",
                 "-t",
                 config.image,
                 "-f",
@@ -275,6 +284,8 @@ def _start_emulator(config: EmulatorConfig, timeout_seconds: float) -> float:
                 str(dockerfile.parent),
             ]
         )
+    else:
+        _run(["docker", "pull", "-q", config.image])
 
     cmd = [
         "docker",
@@ -472,16 +483,17 @@ def _render_report(
     lines.append("## Summary")
     lines.append("")
     lines.append(
-        "| Backend | Status | Startup (ms) | Kick Mean (ms) | Kick P50 (ms) "
-        "| Kick P95 (ms) | Roundtrip Mean (ms) | Roundtrip P50 (ms) "
+        "| Backend | Version | Status | Startup (ms) | Kick Mean (ms) "
+        "| Kick P50 (ms) | Kick P95 (ms) | Roundtrip Mean (ms) | Roundtrip P50 (ms) "
         "| Roundtrip P95 (ms) | Memory Ready (MiB) | Memory Post (MiB) |"
     )
-    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
 
     for result in results:
         lines.append(
             "| "
             f"{result.backend} | "
+            f"{result.version or '-'} | "
             f"{result.status} | "
             f"{_fmt(result.startup_ms)} | "
             f"{_fmt(result.kick_mean_ms)} | "
@@ -505,12 +517,15 @@ def _render_report(
                 "benchmark iterations."
             )
         else:
-            lines.append(f"- {result.backend}: failed ({result.error}).")
+            lines.append(f"- {result.backend}: {result.status} ({result.error}).")
 
     lines.append("")
     lines.append("## Methodology")
     lines.append("")
-    lines.append("- Start each emulator in Docker on port 4566.")
+    lines.append(
+        "- Pull the latest image of each emulator (aws-emulator: rebuild with "
+        "--no-cache from the latest RPM) before starting it on port 4566."
+    )
     lines.append(
         "- aws-emulator has no prebuilt image: build it from "
         "scripts/aws-emulator.Dockerfile (build time excluded from startup), "
@@ -545,6 +560,11 @@ async def _benchmark_emulators(
 
     for config in EMULATORS:
         result = BenchmarkResult(backend=config.name)
+        if config.required_env_key and not os.getenv(config.required_env_key):
+            result.status = "skipped"
+            result.error = f"{config.required_env_key} is not set"
+            results.append(result)
+            continue
         max_attempts = max(1, startup_retries + 1)
         last_exception: Exception | None = None
 
@@ -555,6 +575,11 @@ async def _benchmark_emulators(
                     timeout_seconds=startup_timeout,
                 )
                 result.mem_ready_mib = _container_memory_mib(config.container_name)
+                result.version = (
+                    _run(["docker", "exec", config.container_name, *config.version_cmd])
+                    .stdout.splitlines()[0]
+                    .split()[-1]
+                )
                 metrics = await _run_latency_benchmark(
                     iterations=iterations, endpoint_url=config.endpoint_url
                 )

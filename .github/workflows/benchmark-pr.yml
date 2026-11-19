@@ -115,7 +115,6 @@ jobs:
               image="localstack/localstack:latest"
               health_path="/_localstack/health"
               env_args+=("-e" "SERVICES=sqs,s3")
-              env_args+=("-e" "ACTIVATE_PRO=0")
               env_args+=("-e" "DEFAULT_REGION=us-east-1")
               env_args+=("-e" "AWS_DEFAULT_REGION=us-east-1")
               env_args+=("-e" "DEBUG=0")
@@ -131,7 +130,6 @@ jobs:
               image="taskiq-bench-aws-emulator:local"
               health_path="/__admin/health"
               base_url="https://127.0.0.1:4566"
-              docker build -q -t "$image" -f scripts/aws-emulator.Dockerfile scripts >/dev/null
             fi
 
             docker rm -f "$container" >/dev/null 2>&1 || true
