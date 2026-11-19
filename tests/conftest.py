@@ -1,3 +1,4 @@
+import os
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any, TypedDict
@@ -11,7 +12,7 @@ from types_aiobotocore_sqs.client import SQSClient
 from taskiq_aio_sqs import S3Backend, SQSBroker
 from taskiq_aio_sqs.constants import MAX_SQS_MESSAGE_SIZE
 
-ENDPOINT_URL = "http://localhost:4566"
+ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL", "http://localhost:4566")
 TEST_BUCKET = "test-bucket"
 EXTENDED_BUCKET = "extendeded-bucket"
 

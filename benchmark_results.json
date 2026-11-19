@@ -1,0 +1,44 @@
+[
+  {
+    "backend": "ministack",
+    "error": null,
+    "kick_mean_ms": 3.256603899944821,
+    "kick_p50_ms": 3.2786194997243,
+    "kick_p95_ms": 3.8160477497967804,
+    "mem_post_mib": 72.3,
+    "mem_ready_mib": 71.82,
+    "roundtrip_mean_ms": 9.153434999961974,
+    "roundtrip_p50_ms": 9.055112499936513,
+    "roundtrip_p95_ms": 10.571816199831117,
+    "startup_ms": 3739.466355999866,
+    "status": "ok"
+  },
+  {
+    "backend": "localstack",
+    "error": null,
+    "kick_mean_ms": 4.586445100039782,
+    "kick_p50_ms": 4.150595500050258,
+    "kick_p95_ms": 6.999108650074955,
+    "mem_post_mib": 120.7,
+    "mem_ready_mib": 90.2,
+    "roundtrip_mean_ms": 12.561356600008367,
+    "roundtrip_p50_ms": 12.039258499953576,
+    "roundtrip_p95_ms": 16.249518600170624,
+    "startup_ms": 3074.628262999795,
+    "status": "ok"
+  },
+  {
+    "backend": "floci",
+    "error": null,
+    "kick_mean_ms": 3.1059871000252315,
+    "kick_p50_ms": 2.954259500029366,
+    "kick_p95_ms": 4.123513100034869,
+    "mem_post_mib": 19.73,
+    "mem_ready_mib": 16.82,
+    "roundtrip_mean_ms": 11.9933232999756,
+    "roundtrip_p50_ms": 8.700000000089858,
+    "roundtrip_p95_ms": 27.728891100036854,
+    "startup_ms": 892.5555769997118,
+    "status": "ok"
+  }
+]
