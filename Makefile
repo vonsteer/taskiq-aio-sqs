@@ -31,7 +31,7 @@ test: ministack-init run-tests ministack-stop badge ## Run testing and coverage.
 test-ci: ministack-init run-tests ministack-stop ## Run testing and coverage.
 
 .PHONY: benchmark-emulators
-benchmark-emulators: ## Benchmark MiniStack vs LocalStack vs Floci and write markdown report
+benchmark-emulators: ## Benchmark MiniStack vs LocalStack vs Floci vs AWS Emulator and write markdown report
 	uv run python scripts/benchmark_emulators.py
 
 .PHONY: ministack-init

@@ -54,7 +54,7 @@ jobs:
             start=$(date +%s)
 
             while true; do
-              if curl -fsS "$url" >/dev/null 2>&1; then
+              if curl -fsSk "$url" >/dev/null 2>&1; then
                 return 0
               fi
 
@@ -92,13 +92,15 @@ jobs:
 
           failures=0
 
-          for backend in ministack localstack floci; do
+          for backend in ministack localstack floci aws-emulator; do
             container="taskiq_tests_${backend}"
             log_file="backend-test-${backend}.log"
 
             image=""
             health_path=""
             env_args=()
+            base_url="http://localhost:4566"
+            pytest_env=()
 
             if [ "$backend" = "ministack" ]; then
               image="ministackorg/ministack:latest"
@@ -120,11 +122,16 @@ jobs:
               if [ -n "${LOCALSTACK_AUTH_TOKEN:-}" ]; then
                 env_args+=("-e" "LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN}")
               fi
-            else
+            elif [ "$backend" = "floci" ]; then
               image="floci/floci:latest"
               health_path="/_localstack/health"
               env_args+=("-e" "FLOCI_DEFAULT_REGION=us-east-1")
               env_args+=("-e" "FLOCI_STORAGE_MODE=memory")
+            else
+              image="taskiq-bench-aws-emulator:local"
+              health_path="/__admin/health"
+              base_url="https://127.0.0.1:4566"
+              docker build -q -t "$image" -f scripts/aws-emulator.Dockerfile scripts >/dev/null
             fi
 
             docker rm -f "$container" >/dev/null 2>&1 || true
@@ -135,10 +142,14 @@ jobs:
             duration_seconds="-"
             notes=""
 
-            if wait_for_health "http://localhost:4566${health_path}" "$container"; then
+            if wait_for_health "${base_url}${health_path}" "$container"; then
+              if [ "$backend" = "aws-emulator" ]; then
+                docker cp "$container:/home/emulator/.aws/emulator/4566/ca.pem" "$RUNNER_TEMP/aws-emulator-ca.pem"
+                pytest_env=("AWS_ENDPOINT_URL=${base_url}" "AWS_CA_BUNDLE=$RUNNER_TEMP/aws-emulator-ca.pem")
+              fi
               start_ts=$(date +%s)
               set +e
-              uv run pytest > "$log_file" 2>&1
+              env "${pytest_env[@]}" uv run pytest > "$log_file" 2>&1
               exit_code=$?
               set -e
               end_ts=$(date +%s)

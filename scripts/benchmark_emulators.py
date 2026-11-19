@@ -7,7 +7,9 @@ import json
 import logging
 import math
 import os
+import ssl
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -41,6 +43,9 @@ class EmulatorConfig:
     health_path: str
     env: dict[str, str]
     passthrough_env_keys: tuple[str, ...] = ()
+    endpoint_url: str = ENDPOINT_URL
+    dockerfile: str | None = None
+    ca_path: str | None = None
 
 
 @dataclasses.dataclass
@@ -99,6 +104,16 @@ EMULATORS: tuple[EmulatorConfig, ...] = (
             "FLOCI_DEFAULT_REGION": AWS_REGION,
             "FLOCI_STORAGE_MODE": "memory",
         },
+    ),
+    EmulatorConfig(
+        name="aws-emulator",
+        image="taskiq-bench-aws-emulator:local",
+        container_name="taskiq_bench_aws_emulator",
+        health_path="/__admin/health",
+        env={},
+        endpoint_url="https://127.0.0.1:4566",
+        dockerfile=str(Path(__file__).with_name("aws-emulator.Dockerfile")),
+        ca_path="/home/emulator/.aws/emulator/4566/ca.pem",
     ),
 )
 
@@ -177,7 +192,8 @@ def _wait_for_health_or_fail_container(
     timeout_seconds: float,
 ) -> None:
     """Wait for health endpoint and fail fast if container exits."""
-    health_url = f"{ENDPOINT_URL}{config.health_path}"
+    health_url = f"{config.endpoint_url}{config.health_path}"
+    ssl_context = ssl._create_unverified_context()  # noqa: S323, SLF001
     deadline = time.monotonic() + timeout_seconds
     last_error = "unknown error"
 
@@ -191,7 +207,9 @@ def _wait_for_health_or_fail_container(
             )
 
         try:
-            with urllib.request.urlopen(health_url, timeout=2.0) as response:  # noqa: S310
+            with urllib.request.urlopen(  # noqa: S310
+                health_url, timeout=2.0, context=ssl_context
+            ) as response:
                 if HTTP_OK_MIN <= response.status < HTTP_OK_MAX:
                     return
                 last_error = f"HTTP {response.status}"
@@ -244,6 +262,19 @@ def _container_memory_mib(container_name: str) -> float:
 
 def _start_emulator(config: EmulatorConfig, timeout_seconds: float) -> float:
     _remove_container_if_exists(config.container_name)
+    if config.dockerfile:
+        dockerfile = Path(config.dockerfile)
+        _run(
+            [
+                "docker",
+                "build",
+                "-t",
+                config.image,
+                "-f",
+                str(dockerfile),
+                str(dockerfile.parent),
+            ]
+        )
 
     cmd = [
         "docker",
@@ -265,7 +296,14 @@ def _start_emulator(config: EmulatorConfig, timeout_seconds: float) -> float:
     start = time.perf_counter()
     _run(cmd)
     _wait_for_health_or_fail_container(config, timeout_seconds)
-    return (time.perf_counter() - start) * 1000.0
+    startup_ms = (time.perf_counter() - start) * 1000.0
+    if config.ca_path:
+        ca_file = Path(tempfile.gettempdir()) / f"{config.container_name}-ca.pem"
+        _run(
+            ["docker", "cp", f"{config.container_name}:{config.ca_path}", str(ca_file)]
+        )
+        os.environ["AWS_CA_BUNDLE"] = str(ca_file)
+    return startup_ms
 
 
 def _stop_emulator(config: EmulatorConfig) -> None:
@@ -331,13 +369,15 @@ async def _receive_one_message_via_sqs(
     raise TimeoutError("Timed out waiting for message reception from SQS")
 
 
-async def _run_latency_benchmark(iterations: int) -> dict[str, float]:
+async def _run_latency_benchmark(
+    iterations: int, endpoint_url: str
+) -> dict[str, float]:
     session = get_session()
     queue_name = f"benchmark-queue-{uuid.uuid4().hex}"
 
     client_context = session.create_client(
         "sqs",
-        endpoint_url=ENDPOINT_URL,
+        endpoint_url=endpoint_url,
         aws_access_key_id=AWS_ACCESS_KEY_ID,
         aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
         region_name=AWS_REGION,
@@ -356,7 +396,7 @@ async def _run_latency_benchmark(iterations: int) -> dict[str, float]:
 
         broker = SQSBroker(
             sqs_queue_name=queue_name,
-            endpoint_url=ENDPOINT_URL,
+            endpoint_url=endpoint_url,
             region_name=AWS_REGION,
             aws_access_key_id=AWS_ACCESS_KEY_ID,
             aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
@@ -427,7 +467,7 @@ def _render_report(
     lines.append("")
     lines.append(f"Generated: {now}")
     lines.append(f"Iterations per backend: {iterations}")
-    lines.append(f"Endpoint: {ENDPOINT_URL}")
+    lines.append(f"Endpoint: {ENDPOINT_URL} (aws-emulator: HTTPS on 127.0.0.1:4566)")
     lines.append("")
     lines.append("## Summary")
     lines.append("")
@@ -471,6 +511,11 @@ def _render_report(
     lines.append("## Methodology")
     lines.append("")
     lines.append("- Start each emulator in Docker on port 4566.")
+    lines.append(
+        "- aws-emulator has no prebuilt image: build it from "
+        "scripts/aws-emulator.Dockerfile (build time excluded from startup), "
+        "run with auth off, and trust its self-signed CA via AWS_CA_BUNDLE."
+    )
     lines.append("- Wait for emulator health endpoint to return HTTP 2xx.")
     lines.append("- Create a fresh SQS queue per backend.")
     lines.append(
@@ -510,7 +555,9 @@ async def _benchmark_emulators(
                     timeout_seconds=startup_timeout,
                 )
                 result.mem_ready_mib = _container_memory_mib(config.container_name)
-                metrics = await _run_latency_benchmark(iterations=iterations)
+                metrics = await _run_latency_benchmark(
+                    iterations=iterations, endpoint_url=config.endpoint_url
+                )
                 result.kick_mean_ms = metrics["kick_mean_ms"]
                 result.kick_p50_ms = metrics["kick_p50_ms"]
                 result.kick_p95_ms = metrics["kick_p95_ms"]
@@ -548,7 +595,7 @@ async def _benchmark_emulators(
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for benchmark execution."""
     parser = argparse.ArgumentParser(
-        description="Benchmark MiniStack vs LocalStack vs Floci using taskiq-aio-sqs.",
+        description="Benchmark local SQS emulators using taskiq-aio-sqs.",
     )
     parser.add_argument("--iterations", type=int, default=150)
     parser.add_argument(
